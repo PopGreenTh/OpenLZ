@@ -1,0 +1,84 @@
+package finops
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
+	"github.com/PopGreenTh/OpenLZ/internal/report"
+	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
+)
+
+// ReportSummaryInput models inputs for finops-report-summary.
+type ReportSummaryInput struct {
+	InputPath  string `json:"inputPath"`
+	Format     string `json:"format"`
+	OutputPath string `json:"outputPath"`
+}
+
+// ExecuteReportSummary runs Stage 5: FinOps Reporting & Visualization.
+func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.StageResult, error) {
+	if in.InputPath == "" {
+		in.InputPath = "data/finops_enriched.parquet"
+	}
+	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
+	if in.OutputPath != "" {
+		in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
+	}
+	if in.Format == "" {
+		in.Format = "table"
+	}
+
+	engine, err := duckdb.NewEngine()
+	if err != nil {
+		return nil, fmt.Errorf("duckdb init failed: %w", err)
+	}
+	defer engine.Close()
+
+	records, err := engine.ReadEnrichedFromParquet(ctx, in.InputPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read enriched dataset from %s: %w", in.InputPath, err)
+	}
+
+	switch strings.ToLower(in.Format) {
+	case "markdown", "md":
+		md := report.RenderMarkdown(records, "FinOps")
+		if in.OutputPath != "" {
+			_ = os.WriteFile(in.OutputPath, []byte(md), 0644)
+		} else {
+			fmt.Println(md)
+		}
+	case "powerbi":
+		mOut := "finops_report.m"
+		pOut := "finops_report.parquet"
+		if in.OutputPath != "" {
+			pOut = in.OutputPath
+			mOut = in.OutputPath + ".m"
+		}
+		if err := report.ExportPowerBI(ctx, records, pOut, mOut, engine); err != nil {
+			return nil, err
+		}
+	case "excel":
+		cOut := "finops_report.csv"
+		mOut := "finops_report_excel.m"
+		if in.OutputPath != "" {
+			cOut = in.OutputPath
+			mOut = in.OutputPath + ".m"
+		}
+		if err := report.ExportExcel(ctx, records, cOut, mOut, engine); err != nil {
+			return nil, err
+		}
+	default:
+		report.RenderConsoleTable(records, "FinOps")
+	}
+
+	return &types.StageResult{
+		Stage:       types.StageFinOpsReportSummary,
+		Success:     true,
+		RecordCount: len(records),
+		OutputPath:  in.OutputPath,
+		Message:     fmt.Sprintf("Generated FinOps report for %d records (format: %s)", len(records), in.Format),
+	}, nil
+}

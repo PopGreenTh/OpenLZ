@@ -1,0 +1,210 @@
+version: '3'
+
+vars:
+  BINARY: 'openlz.exe'
+  DATA_DIR: 'data'
+  PORT: '8080'
+  CACHE_DB: 'openlz_cache.duckdb'
+
+tasks:
+  build:
+    desc: Compile the OpenLZ CLI binary
+    cmds:
+      - go build -tags=no_duckdb_arrow -o {{.BINARY}} main.go
+    sources:
+      - '**/*.go'
+    generates:
+      - '{{.BINARY}}'
+
+  build:finops:
+    desc: Compile the dedicated OpenLZ FinOps CLI binary
+    cmds:
+      - go build -tags=no_duckdb_arrow -o openlz-finops.exe ./cmd/openlz-finops
+
+  build:secops:
+    desc: Compile the dedicated OpenLZ SecOps CLI binary
+    cmds:
+      - go build -tags=no_duckdb_arrow -o openlz-secops.exe ./cmd/openlz-secops
+
+  build:cloudops:
+    desc: Compile the dedicated OpenLZ CloudOps CLI binary
+    cmds:
+      - go build -tags=no_duckdb_arrow -o openlz-cloudops.exe ./cmd/openlz-cloudops
+
+  build:all:
+    desc: Compile all OpenLZ binaries (unified and per-ops dedicated)
+    deps: [build, build:finops, build:secops, build:cloudops]
+
+  clean:
+    desc: Remove built binary, persistent DuckDB cache, and data artifacts
+    cmds:
+      - cmd /c if exist {{.BINARY}} del /f /q {{.BINARY}}
+      - cmd /c if exist {{.CACHE_DB}} del /f /q {{.CACHE_DB}}
+      - cmd /c if exist {{.DATA_DIR}} rmdir /s /q {{.DATA_DIR}}
+      - cmd /c if exist *.parquet del /f /q *.parquet
+      - cmd /c if exist *.m del /f /q *.m
+      - cmd /c if exist *.csv del /f /q *.csv
+
+  # --- FinOps Dedicated Stage Tasks ---
+  sense:finops:
+    desc: 'FinOps (Stage 1): Sense AWS Cost Explorer data to raw parquet'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops-sense-costexplorer --output {{.DATA_DIR}}/finops_raw.parquet
+
+  sense:finops:costexplorer:
+    desc: 'FinOps (Stage 1a): Dedicated AWS Cost Explorer query'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops-sense-costexplorer --output {{.DATA_DIR}}/finops_raw.parquet
+
+  sense:finops:costanomaly:
+    desc: 'FinOps (Stage 1b): Dedicated AWS Cost Anomaly Detection scan'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops-sense-costanomaly --output {{.DATA_DIR}}/finops_anomalies.parquet
+
+  analyze:finops:
+    desc: 'FinOps (Stage 2): Analyze raw parquet for cost spikes'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops-analyze-varianceimpact --input {{.DATA_DIR}}/finops_raw.parquet --output {{.DATA_DIR}}/finops_anomalies.parquet
+
+  analyze:finops:varianceimpact:
+    desc: 'FinOps (Stage 2): Dedicated Cost Variance & Impact Analysis'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops-analyze-varianceimpact --input {{.DATA_DIR}}/finops_raw.parquet --output {{.DATA_DIR}}/finops_anomalies.parquet
+
+  enrich:finops:
+    desc: 'FinOps (Stage 3): Enrich anomalies with Landing Zone metadata'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops enrich --input {{.DATA_DIR}}/finops_anomalies.parquet --output {{.DATA_DIR}}/finops_enriched.parquet
+
+  enforce:finops:
+    desc: 'FinOps (Stage 4): Enforce FinOps guardrails (dry-run)'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops enforce --input {{.DATA_DIR}}/finops_enriched.parquet --output {{.DATA_DIR}}/finops_audit.parquet --dry-run
+
+  report:finops:
+    desc: 'FinOps (Stage 5): Generate FinOps summary table'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} finops report --input {{.DATA_DIR}}/finops_enriched.parquet --format table
+
+  # --- SecOps Dedicated Stage Tasks ---
+  sense:secops:
+    desc: 'SecOps (Stage 1): Sense AWS security posture findings'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops-sense-posture --output {{.DATA_DIR}}/secops_raw.parquet
+
+  sense:secops:posture:
+    desc: 'SecOps (Stage 1a): Dedicated security posture scan'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops-sense-posture --output {{.DATA_DIR}}/secops_raw.parquet
+
+  sense:secops:vulner:
+    desc: 'SecOps (Stage 1b): Dedicated CVE and vulnerability scan'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops-sense-vulner --output {{.DATA_DIR}}/secops_vulner_raw.parquet
+
+  analyze:secops:
+    desc: 'SecOps (Stage 2): Analyze security risks'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops analyze --input {{.DATA_DIR}}/secops_raw.parquet --output {{.DATA_DIR}}/secops_anomalies.parquet
+
+  enrich:secops:
+    desc: 'SecOps (Stage 3): Enrich findings with blast radius metadata'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops enrich --input {{.DATA_DIR}}/secops_anomalies.parquet --output {{.DATA_DIR}}/secops_enriched.parquet
+
+  enforce:secops:
+    desc: 'SecOps (Stage 4): Remediate security exposures (dry-run)'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops enforce --input {{.DATA_DIR}}/secops_enriched.parquet --output {{.DATA_DIR}}/secops_audit.parquet --dry-run
+
+  report:secops:
+    desc: 'SecOps (Stage 5): Generate SecOps summary table'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} secops report --input {{.DATA_DIR}}/secops_enriched.parquet --format table
+
+  # --- CloudOps Dedicated Stage Tasks ---
+  sense:cloudops:
+    desc: 'CloudOps (Stage 1): Sense operational waste and hygiene'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} cloudops sense --output {{.DATA_DIR}}/cloudops_raw.parquet
+
+  analyze:cloudops:
+    desc: 'CloudOps (Stage 2): Analyze operational waste'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} cloudops analyze --input {{.DATA_DIR}}/cloudops_raw.parquet --output {{.DATA_DIR}}/cloudops_anomalies.parquet
+
+  enrich:cloudops:
+    desc: 'CloudOps (Stage 3): Enrich waste findings with lifecycle metadata'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} cloudops enrich --input {{.DATA_DIR}}/cloudops_anomalies.parquet --output {{.DATA_DIR}}/cloudops_enriched.parquet
+
+  enforce:cloudops:
+    desc: 'CloudOps (Stage 4): Clean up orphaned assets (dry-run)'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} cloudops enforce --input {{.DATA_DIR}}/cloudops_enriched.parquet --output {{.DATA_DIR}}/cloudops_audit.parquet --dry-run
+
+  report:cloudops:
+    desc: 'CloudOps (Stage 5): Generate CloudOps summary table'
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} cloudops report --input {{.DATA_DIR}}/cloudops_enriched.parquet --format table
+
+  # --- Dedicated Reporting Tasks ---
+  report:powerbi:
+    desc: Export Power BI dataset (.parquet) and Power Query M script (.m)
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} report powerbi --output {{.DATA_DIR}}/powerbi_dataset.parquet
+
+  report:excel:
+    desc: Export Excel CSV dataset (.csv) and Power Query formula (.m)
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} report excel --output {{.DATA_DIR}}/excel_dataset.csv
+
+  report:executive:
+    desc: Print executive C-Level dashboard
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} report executive
+
+  report:serve:
+    desc: Start live HTTP REST server on port 8080 for Power BI & Excel live web refresh
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} report serve --port {{.PORT}}
+
+  # --- Pipeline Tasks ---
+  pipeline:
+    desc: Run end-to-end 5-stage pipeline across FinOps, SecOps, and CloudOps
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} pipeline
+
+  e2e:
+    desc: Full E2E orchestration: compile, run pipeline, and export Power BI & Excel datasets
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} pipeline
+      - ./{{.BINARY}} report powerbi --output {{.DATA_DIR}}/powerbi_dataset.parquet
+      - ./{{.BINARY}} report excel --output {{.DATA_DIR}}/excel_dataset.csv
+      - ./{{.BINARY}} report executive

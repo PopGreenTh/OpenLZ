@@ -1,0 +1,13 @@
+{
+    "go.useLanguageServer": true,
+    "go.buildFlags": [
+        "-tags=no_duckdb_arrow"
+    ],
+    "go.testFlags": [
+        "-tags=no_duckdb_arrow"
+    ],
+    "go.delveConfig": {
+        "debugAdapter": "dlv-dap",
+        "showGlobalVariables": true
+    }
+}

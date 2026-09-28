@@ -1,0 +1,185 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug FinOps: sense-costexplorer (Real AWS)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-finops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-costexplorer",
+                "--mock=false",
+                "--no-cache",
+                "--start-date",
+                "2026-06-01",
+                "--end-date",
+                "2026-09-01",
+                "--log-level",
+                "debug",
+                "--payer-account",
+                "225989366329",
+                "--group-by",
+                "HIERARCHICAL",
+                "--primary-tag",
+                "Project",
+                "--secondary-tag",
+                "Application",
+                "--output",
+                "data/finops_raw.parquet"
+            ],
+            "env": {
+                "AWS_REGION": "ap-southeast-1",
+                "AWS_DEFAULT_REGION": "ap-southeast-1",
+                "AWS_PROFILE": "pms-fin-admin-cvd-org-mgmt-225989366329"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug FinOps: sense-costexplorer (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-finops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-costexplorer",
+                "--output",
+                "data/finops_raw.parquet",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug FinOps: sense-costanomaly (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-finops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-costanomaly",
+                "--output",
+                "data/finops_anomalies.parquet",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug FinOps: analyze-varianceimpact (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-finops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "analyze-varianceimpact",
+                "--input",
+                "data/finops_raw.parquet",
+                "--output",
+                "data/finops_anomalies.parquet",
+                "--threshold",
+                "1.3"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug SecOps: sense-posture (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-secops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-posture",
+                "--output",
+                "data/secops_raw.parquet",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug SecOps: sense-vulner (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-secops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-vulner",
+                "--output",
+                "data/secops_vulner_raw.parquet",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug CloudOps: sense-hygiene (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-cloudops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "sense-hygiene",
+                "--output",
+                "data/cloudops_raw.parquet",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug CloudOps: analyze-wastehygiene (Isolated)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-cloudops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "analyze-wastehygiene",
+                "--input",
+                "data/cloudops_raw.parquet",
+                "--output",
+                "data/cloudops_anomalies.parquet"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug FinOps Lambda: Local Event Test",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/openlz-finops/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "lambda",
+                "sense-costexplorer",
+                "{\"mock\": true, \"outputPath\": \"data/finops_raw.parquet\"}"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Unified: Full OpenLZ CLI (All Ops)",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/main.go",
+            "buildFlags": "-tags=no_duckdb_arrow",
+            "args": [
+                "pipeline",
+                "--mock=true"
+            ],
+            "env": {},
+            "console": "integratedTerminal"
+        }
+    ]
+}

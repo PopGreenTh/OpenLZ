@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+openlz
+
+# DuckDB persistent cache
+*.duckdb
+*.duckdb.tmp
+openlz_cache.duckdb
+
+# Generated data artifacts
+data/
+*.parquet
+*.csv
+*.m
+
+# Go workspace / test artifacts
+*.test
+*.out
+
+# Local cache and scratch
+cache/
+scratch/
+
+ref/
