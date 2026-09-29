@@ -126,7 +126,6 @@ var reportExcelCmd = &cobra.Command{
 		if cOut == "" {
 			cOut = "excel_dataset.csv"
 		}
-		mOut := strings.TrimSuffix(cOut, ".csv") + "_excel.m"
 
 		var records []cloud.EnrichedRecord
 		if _, err := os.Stat(repInput); err == nil {
@@ -140,7 +139,7 @@ var reportExcelCmd = &cobra.Command{
 		if sheetName == "" {
 			sheetName = report.DefaultEnrichedSheet
 		}
-		return report.ExportExcel(ctx, records, cOut, mOut, engine, sheetName)
+		return report.ExportExcel(ctx, records, cOut, "", engine, sheetName)
 	},
 }
 
@@ -190,19 +189,17 @@ func runOpsReport(displayName, opsName, inPath, outPath, format string) error {
 		if pOut == "" {
 			pOut = fmt.Sprintf("%s_report.parquet", opsName)
 		}
-		mOut := strings.TrimSuffix(pOut, ".parquet") + ".m"
-		return report.ExportPowerBI(ctx, records, pOut, mOut, engine)
-	case "excel":
+		return report.ExportPowerBI(ctx, records, pOut, "", engine)
+	case "excel", "csv":
 		cOut := outPath
 		if cOut == "" {
 			cOut = fmt.Sprintf("%s_report.csv", opsName)
 		}
-		mOut := strings.TrimSuffix(cOut, ".csv") + "_excel.m"
 		sheetName := repSheet
 		if sheetName == "" {
 			sheetName = fmt.Sprintf("%s_Findings", displayName)
 		}
-		return report.ExportExcel(ctx, records, cOut, mOut, engine, sheetName)
+		return report.ExportExcel(ctx, records, cOut, "", engine, sheetName)
 	case "serve", "http", "rest":
 		srv := rest.NewServer(8080, engine, inPath, inPath, inPath)
 		return srv.Start(ctx)
@@ -265,17 +262,17 @@ func generateSampleDatasetForOps(ops string) []cloud.EnrichedRecord {
 func init() {
 	reportFinopsCmd.Flags().StringVar(&repInput, "input", "data/finops_enriched.parquet", "Input enriched parquet file")
 	reportFinopsCmd.Flags().StringVar(&repOutput, "output", "", "Output file path")
-	reportFinopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, serve")
+	reportFinopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, csv, serve")
 	reportFinopsCmd.Flags().StringVar(&repSheet, "sheet", "", "Excel worksheet name (default: FinOps_Findings)")
 
 	reportSecopsCmd.Flags().StringVar(&repInput, "input", "data/secops_enriched.parquet", "Input enriched parquet file")
 	reportSecopsCmd.Flags().StringVar(&repOutput, "output", "", "Output file path")
-	reportSecopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, serve")
+	reportSecopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, csv, serve")
 	reportSecopsCmd.Flags().StringVar(&repSheet, "sheet", "", "Excel worksheet name (default: SecOps_Findings)")
 
 	reportCloudopsCmd.Flags().StringVar(&repInput, "input", "data/cloudops_enriched.parquet", "Input enriched parquet file")
 	reportCloudopsCmd.Flags().StringVar(&repOutput, "output", "", "Output file path")
-	reportCloudopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, serve")
+	reportCloudopsCmd.Flags().StringVar(&repFormat, "format", "table", "Format: table, markdown, powerbi, excel, csv, serve")
 	reportCloudopsCmd.Flags().StringVar(&repSheet, "sheet", "", "Excel worksheet name (default: CloudOps_Findings)")
 
 	reportPowerBICmd.Flags().StringVar(&repInput, "input", "data/finops_enriched.parquet", "Input enriched parquet file")

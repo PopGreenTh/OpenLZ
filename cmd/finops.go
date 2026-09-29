@@ -177,14 +177,12 @@ var finopsReportCmd = &cobra.Command{
 				mOut = finopsReportOut + ".m"
 			}
 			return report.ExportPowerBI(ctx, records, pOut, mOut, engine)
-		case "excel":
+		case "excel", "csv":
 			cOut := "finops_report.csv"
-			mOut := "finops_report_excel.m"
 			if finopsReportOut != "" {
 				cOut = finopsReportOut
-				mOut = finopsReportOut + ".m"
 			}
-			return report.ExportExcel(ctx, records, cOut, mOut, engine)
+			return report.ExportExcel(ctx, records, cOut, "", engine)
 		case "serve", "http", "rest":
 			srv := rest.NewServer(8080, engine, finopsEnrichPath, "", "")
 			return srv.Start(ctx)

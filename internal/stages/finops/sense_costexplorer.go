@@ -235,19 +235,20 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			}
 			generatedOutputs = append(generatedOutputs, csvPath)
 
+			// Every CSV export must come with a Power Query .m file pointing to it
+			excelMPath := basePath + "_excel.m"
+			mCode := powerquery.GenerateRawFinOpsCsvMScript(csvPath)
+			if err := powerquery.WriteMScriptToFile(mCode, excelMPath); err != nil {
+				return nil, fmt.Errorf("failed writing excel power query .m file: %w", err)
+			}
+			generatedOutputs = append(generatedOutputs, excelMPath)
+
 			if wantExcel {
 				xlsxPath := basePath + ".xlsx"
 				if err := report.ExportFinOpsToXLSX(records, xlsxPath); err != nil {
 					return nil, fmt.Errorf("failed exporting to excel xlsx: %w", err)
 				}
 				generatedOutputs = append(generatedOutputs, xlsxPath)
-
-				excelMPath := basePath + "_excel.m"
-				mCode := powerquery.GenerateRawFinOpsCsvMScript(csvPath)
-				if err := powerquery.WriteMScriptToFile(mCode, excelMPath); err != nil {
-					return nil, fmt.Errorf("failed writing excel power query .m file: %w", err)
-				}
-				generatedOutputs = append(generatedOutputs, excelMPath)
 			}
 		}
 

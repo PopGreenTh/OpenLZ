@@ -60,14 +60,12 @@ func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.St
 		if err := report.ExportPowerBI(ctx, records, pOut, mOut, engine); err != nil {
 			return nil, err
 		}
-	case "excel":
+	case "excel", "csv":
 		cOut := "secops_report.csv"
-		mOut := "secops_report_excel.m"
 		if in.OutputPath != "" {
 			cOut = in.OutputPath
-			mOut = in.OutputPath + ".m"
 		}
-		if err := report.ExportExcel(ctx, records, cOut, mOut, engine, report.DefaultSecOpsSheet); err != nil {
+		if err := report.ExportExcel(ctx, records, cOut, "", engine, report.DefaultSecOpsSheet); err != nil {
 			return nil, err
 		}
 	default:
