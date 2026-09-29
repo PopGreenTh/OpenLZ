@@ -12,6 +12,7 @@ import (
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
 	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
 	"github.com/PopGreenTh/OpenLZ/internal/powerquery"
+	"github.com/PopGreenTh/OpenLZ/internal/report"
 	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/PopGreenTh/OpenLZ/internal/workflow"
 )
@@ -235,6 +236,12 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			generatedOutputs = append(generatedOutputs, csvPath)
 
 			if wantExcel {
+				xlsxPath := basePath + ".xlsx"
+				if err := report.ExportFinOpsToXLSX(records, xlsxPath); err != nil {
+					return nil, fmt.Errorf("failed exporting to excel xlsx: %w", err)
+				}
+				generatedOutputs = append(generatedOutputs, xlsxPath)
+
 				excelMPath := basePath + "_excel.m"
 				mCode := powerquery.GenerateRawFinOpsCsvMScript(csvPath)
 				if err := powerquery.WriteMScriptToFile(mCode, excelMPath); err != nil {

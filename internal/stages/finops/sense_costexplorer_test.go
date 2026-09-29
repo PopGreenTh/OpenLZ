@@ -526,6 +526,9 @@ func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.csv")); os.IsNotExist(err) {
 		t.Errorf("expected finops_bare.csv to be created automatically")
 	}
+	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.xlsx")); os.IsNotExist(err) {
+		t.Errorf("expected finops_bare.xlsx to be created automatically")
+	}
 	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare_excel.m")); os.IsNotExist(err) {
 		t.Errorf("expected finops_bare_excel.m to be created automatically")
 	}
