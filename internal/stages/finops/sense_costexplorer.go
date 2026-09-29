@@ -11,6 +11,7 @@ import (
 	"github.com/PopGreenTh/OpenLZ/internal/cache"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
 	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
+	"github.com/PopGreenTh/OpenLZ/internal/powerquery"
 	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/PopGreenTh/OpenLZ/internal/workflow"
 )
@@ -33,6 +34,7 @@ type SenseCostExplorerInput struct {
 	ExcludeDiscounts bool     `json:"excludeDiscounts"`
 	ExcludeCredits   bool     `json:"excludeCredits"`
 	MinCostThreshold float64  `json:"minCostThreshold"`
+	Format           string   `json:"format"` // "parquet", "csv", "excel", "powerbi", "all" (or comma-separated)
 	OutputPath       string   `json:"outputPath"`
 	CacheDBPath      string   `json:"cacheDBPath"`
 	NoCache          bool     `json:"noCache"`
@@ -159,38 +161,118 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 		records = filtered
 	}
 
+	var generatedOutputs []string
 	if in.OutputPath != "" {
+		basePath := in.OutputPath
+		for _, ext := range []string{".parquet", ".csv", ".m", ".xlsx"} {
+			if strings.HasSuffix(strings.ToLower(basePath), ext) {
+				basePath = basePath[:len(basePath)-len(ext)]
+				break
+			}
+		}
+
+		fmtReq := strings.ToLower(strings.TrimSpace(in.Format))
+		wantParquet := false
+		wantCSV := false
+		wantExcel := false
+		wantPowerBI := false
+
+		if fmtReq == "" {
+			if strings.HasSuffix(strings.ToLower(in.OutputPath), ".csv") {
+				wantCSV = true
+			} else {
+				wantParquet = true
+			}
+		} else {
+			tokens := strings.FieldsFunc(fmtReq, func(r rune) bool {
+				return r == ',' || r == ' ' || r == ';'
+			})
+			for _, t := range tokens {
+				switch strings.TrimSpace(t) {
+				case "all":
+					wantParquet = true
+					wantCSV = true
+					wantExcel = true
+					wantPowerBI = true
+				case "parquet":
+					wantParquet = true
+				case "csv":
+					wantCSV = true
+				case "excel":
+					wantCSV = true
+					wantExcel = true
+				case "powerbi":
+					wantParquet = true
+					wantPowerBI = true
+				}
+			}
+		}
+
 		slog.InfoContext(ctx, "Writing FinOps records to storage",
 			"recordCount", len(records),
 			"outputPath", in.OutputPath,
+			"format", in.Format,
+			"parquet", wantParquet,
+			"csv", wantCSV,
+			"excel", wantExcel,
+			"powerbi", wantPowerBI,
 		)
-		if strings.HasSuffix(strings.ToLower(in.OutputPath), ".csv") {
-			tmpParquet := in.OutputPath + ".tmp.parquet"
-			if err := engine.WriteFinOpsParquet(ctx, records, tmpParquet); err != nil {
-				return nil, fmt.Errorf("failed writing raw finops parquet: %w", err)
-			}
-			if err := engine.ExportToCSV(ctx, tmpParquet, in.OutputPath); err != nil {
-				_ = os.Remove(tmpParquet)
+
+		parquetPath := basePath + ".parquet"
+		if err := engine.WriteFinOpsParquet(ctx, records, parquetPath); err != nil {
+			return nil, fmt.Errorf("failed writing raw finops parquet: %w", err)
+		}
+		if wantParquet {
+			generatedOutputs = append(generatedOutputs, parquetPath)
+		}
+
+		if wantCSV || wantExcel {
+			csvPath := basePath + ".csv"
+			if err := engine.ExportToCSV(ctx, parquetPath, csvPath); err != nil {
 				return nil, fmt.Errorf("failed exporting to csv: %w", err)
 			}
-			_ = os.Remove(tmpParquet)
-		} else {
-			if err := engine.WriteFinOpsParquet(ctx, records, in.OutputPath); err != nil {
-				return nil, fmt.Errorf("failed writing raw finops parquet: %w", err)
+			generatedOutputs = append(generatedOutputs, csvPath)
+
+			if wantExcel {
+				excelMPath := basePath + "_excel.m"
+				mCode := powerquery.GenerateRawFinOpsCsvMScript(csvPath)
+				if err := powerquery.WriteMScriptToFile(mCode, excelMPath); err != nil {
+					return nil, fmt.Errorf("failed writing excel power query .m file: %w", err)
+				}
+				generatedOutputs = append(generatedOutputs, excelMPath)
 			}
 		}
+
+		if wantPowerBI {
+			powerbiMPath := basePath + "_powerbi.m"
+			mCode := powerquery.GenerateRawFinOpsParquetMScript(parquetPath)
+			if err := powerquery.WriteMScriptToFile(mCode, powerbiMPath); err != nil {
+				return nil, fmt.Errorf("failed writing powerbi power query .m file: %w", err)
+			}
+			generatedOutputs = append(generatedOutputs, powerbiMPath)
+		}
+
+		// If user only wanted CSV and not Parquet, clean up the temporary Parquet file
+		if !wantParquet && !wantPowerBI && (wantCSV || wantExcel) {
+			_ = os.Remove(parquetPath)
+		}
+	}
+
+	outSummary := in.OutputPath
+	if len(generatedOutputs) > 0 {
+		outSummary = strings.Join(generatedOutputs, ", ")
 	}
 
 	slog.InfoContext(ctx, "Stage 1a (FinOps Sense) completed successfully",
 		"recordCount", len(records),
-		"outputPath", in.OutputPath,
+		"outputs", generatedOutputs,
 	)
 
 	return &types.StageResult{
 		Stage:       types.StageFinOpsSenseCostExplorer,
 		Success:     true,
 		RecordCount: len(records),
-		OutputPath:  in.OutputPath,
-		Message:     fmt.Sprintf("Sensed %d Cost Explorer records into %s", len(records), in.OutputPath),
+		OutputPath:  outSummary,
+		Message:     fmt.Sprintf("Sensed %d Cost Explorer records into %s", len(records), outSummary),
 	}, nil
 }

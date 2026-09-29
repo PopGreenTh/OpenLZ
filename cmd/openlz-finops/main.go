@@ -49,6 +49,7 @@ func init() {
 		fSenseExclDisc      bool
 		fSenseExclCred      bool
 		fSenseMinCost       float64
+		fSenseFormat        string
 		fSenseStart         string
 		fSenseEnd           string
 		fSenseSvc           string
@@ -90,6 +91,7 @@ func init() {
 				ExcludeDiscounts: fSenseExclDisc,
 				ExcludeCredits:   fSenseExclCred,
 				MinCostThreshold: fSenseMinCost,
+				Format:           fSenseFormat,
 				OutputPath:       fSenseOut,
 				CacheDBPath:      cacheDBPath,
 				NoCache:          fSenseNoCache,
@@ -114,10 +116,11 @@ func init() {
 	cmdSenseCE.Flags().BoolVar(&fSenseExclDisc, "exclude-discounts", false, "Exclude discount record types (EDP, SPP)")
 	cmdSenseCE.Flags().BoolVar(&fSenseExclCred, "exclude-credits", false, "Exclude credit record types")
 	cmdSenseCE.Flags().Float64Var(&fSenseMinCost, "min-cost", 0.0, "Minimum dollar cost threshold to retain record")
+	cmdSenseCE.Flags().StringVar(&fSenseFormat, "format", "", "Output format(s): parquet, csv, excel, powerbi, all (comma-separated, e.g. parquet,csv)")
 	cmdSenseCE.Flags().StringVar(&fSenseStart, "start-date", "", "Start date (YYYY-MM-DD)")
 	cmdSenseCE.Flags().StringVar(&fSenseEnd, "end-date", "", "End date (YYYY-MM-DD)")
 	cmdSenseCE.Flags().StringVar(&fSenseSvc, "service", "all", "Service filter (e.g. ec2, s3, all)")
-	cmdSenseCE.Flags().StringVar(&fSenseOut, "output", "data/finops_raw.parquet", "Output raw parquet path")
+	cmdSenseCE.Flags().StringVar(&fSenseOut, "output", "data/finops_raw.parquet", "Output raw file path")
 	cmdSenseCE.Flags().BoolVar(&fSenseNoCache, "no-cache", false, "Bypass DuckDB API cache and query live cloud APIs directly")
 	cmdSenseCE.Flags().BoolVar(&fSenseMock, "mock", true, "Use mock/offline cloud data")
 	rootCmd.AddCommand(cmdSenseCE)

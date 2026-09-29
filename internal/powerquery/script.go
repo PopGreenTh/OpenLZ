@@ -37,6 +37,71 @@ in
 `, escapedPath)
 }
 
+// GenerateRawFinOpsParquetMScript produces Power Query M-code for the 17-column normalized raw FinOps Parquet dataset.
+func GenerateRawFinOpsParquetMScript(parquetFilePath string) string {
+	escapedPath := strings.ReplaceAll(filepath.Clean(parquetFilePath), `\`, `\\`)
+	return fmt.Sprintf(`// OpenLZ Raw FinOps Power Query M-Formula (Parquet Source)
+// 1. Open Power BI Desktop or Excel -> Data -> Get Data -> Blank Query
+// 2. Open "Advanced Editor" and replace existing code with this snippet:
+let
+    Source = Parquet.Document(File.Contents("%s")),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{
+        {"account_id", type text},
+        {"account_name", type text},
+        {"service", type text},
+        {"usage_date", type text},
+        {"usage_period", type text},
+        {"amount", type number},
+        {"daily_amount", type number},
+        {"days_in_period", type number},
+        {"metric", type text},
+        {"frequency", type text},
+        {"unit", type text},
+        {"currency", type text},
+        {"region", type text},
+        {"usage_type", type text},
+        {"primary_tag", type text},
+        {"secondary_tag", type text},
+        {"recorded_at", type datetime}
+    })
+in
+    #"Changed Type"
+`, escapedPath)
+}
+
+// GenerateRawFinOpsCsvMScript produces Power Query M-code for the 17-column normalized raw FinOps CSV dataset.
+func GenerateRawFinOpsCsvMScript(csvFilePath string) string {
+	escapedPath := strings.ReplaceAll(filepath.Clean(csvFilePath), `\`, `\\`)
+	return fmt.Sprintf(`// OpenLZ Raw FinOps Power Query M-Formula for Excel & Power BI (CSV Source)
+// 1. Open Excel or Power BI Desktop -> Data -> Get Data -> Blank Query
+// 2. Open "Advanced Editor" and replace existing code with this snippet:
+let
+    Source = Csv.Document(File.Contents("%s"),[Delimiter=",", Columns=17, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{
+        {"account_id", type text},
+        {"account_name", type text},
+        {"service", type text},
+        {"usage_date", type text},
+        {"usage_period", type text},
+        {"amount", type number},
+        {"daily_amount", type number},
+        {"days_in_period", type number},
+        {"metric", type text},
+        {"frequency", type text},
+        {"unit", type text},
+        {"currency", type text},
+        {"region", type text},
+        {"usage_type", type text},
+        {"primary_tag", type text},
+        {"secondary_tag", type text},
+        {"recorded_at", type datetime}
+    })
+in
+    #"Changed Type"
+`, escapedPath)
+}
+
 // GenerateWebMScript produces Power Query M-code to query the live OpenLZ REST feed.
 func GenerateWebMScript(endpointURL string) string {
 	return fmt.Sprintf(`// OpenLZ Power Query M-Formula for Live Web Data Refresh

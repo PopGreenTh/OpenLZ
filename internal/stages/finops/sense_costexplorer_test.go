@@ -3,6 +3,7 @@ package finops_test
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -448,5 +449,65 @@ func TestSenseCostExplorer_Hierarchical(t *testing.T) {
 		_ = dupRows.Scan(&acc, &svc, &p, &s, &dt, &cnt)
 		t.Fatalf("detected duplicate records in parquet: account=%s service=%s primary_tag=%s secondary_tag=%s date=%s count=%d", acc, svc, p, s, dt, cnt)
 	}
+}
+
+func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "openlz_multiformat_*")
+	if err != nil {
+		t.Fatalf("failed creating temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+	outBase := filepath.Join(tempDir, "finops_test_raw.parquet")
+
+	res, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:    []string{"111122223333"},
+		Format:      "all",
+		OutputPath:  outBase,
+		CacheDBPath: filepath.Join(tempDir, "cache.duckdb"),
+		Mock:        true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSenseCostExplorer with format=all failed: %v", err)
+	}
+	if !res.Success || res.RecordCount == 0 {
+		t.Fatalf("expected positive record count, got %d", res.RecordCount)
+	}
+
+	parquetFile := filepath.Join(tempDir, "finops_test_raw.parquet")
+	csvFile := filepath.Join(tempDir, "finops_test_raw.csv")
+	excelMFile := filepath.Join(tempDir, "finops_test_raw_excel.m")
+	powerbiMFile := filepath.Join(tempDir, "finops_test_raw_powerbi.m")
+
+	if _, err := os.Stat(parquetFile); os.IsNotExist(err) {
+		t.Errorf("expected parquet file %s to exist", parquetFile)
+	}
+	if _, err := os.Stat(csvFile); os.IsNotExist(err) {
+		t.Errorf("expected csv file %s to exist", csvFile)
+	}
+	if _, err := os.Stat(excelMFile); os.IsNotExist(err) {
+		t.Errorf("expected excel .m file %s to exist", excelMFile)
+	}
+	if _, err := os.Stat(powerbiMFile); os.IsNotExist(err) {
+		t.Errorf("expected powerbi .m file %s to exist", powerbiMFile)
+	}
+
+	// Verify CSV contents have header
+	csvBytes, err := os.ReadFile(csvFile)
+	if err != nil {
+		t.Fatalf("failed reading csv: %v", err)
+	}
+	csvContent := string(csvBytes)
+	if !strings.Contains(csvContent, "account_id") || !strings.Contains(csvContent, "recorded_at") {
+		t.Errorf("csv missing expected column headers: %s", csvContent[:min(100, len(csvContent))])
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
