@@ -72,12 +72,21 @@ func truncate(s string, max int) string {
 }
 
 // ExportPowerBI exports Parquet dataset and generates the Power Query M script.
-func ExportPowerBI(ctx context.Context, records []cloud.EnrichedRecord, parquetPath, mScriptPath string, engine *duckdb.Engine) error {
-	if parquetPath == "" {
-		parquetPath = "report_powerbi.parquet"
+func ExportPowerBI(ctx context.Context, records []cloud.EnrichedRecord, outPath, mScriptPath string, engine *duckdb.Engine) error {
+	basePath := outPath
+	if basePath == "" {
+		basePath = "report_powerbi"
 	}
+	lower := strings.ToLower(basePath)
+	if strings.HasSuffix(lower, ".parquet") {
+		basePath = basePath[:len(basePath)-8]
+	} else if strings.HasSuffix(lower, ".m") {
+		basePath = basePath[:len(basePath)-2]
+	}
+
+	parquetPath := basePath + ".parquet"
 	if mScriptPath == "" {
-		mScriptPath = "report_powerbi.m"
+		mScriptPath = basePath + "_powerbi.m"
 	}
 
 	if err := engine.WriteEnrichedParquet(ctx, records, parquetPath); err != nil {
@@ -91,44 +100,64 @@ func ExportPowerBI(ctx context.Context, records []cloud.EnrichedRecord, parquetP
 
 	fmt.Printf("[Power BI Export Ready]\n")
 	fmt.Printf("  -> Parquet Dataset: %s\n", parquetPath)
-	fmt.Printf("  -> Power Query .m Formula: %s\n", mScriptPath)
+	fmt.Printf("  -> Power Query .m Formula (Parquet Source): %s\n", mScriptPath)
 	return nil
 }
 
-// ExportExcel exports native XLSX workbook, CSV dataset, and writes an Excel Power Query snippet.
-// It accepts an optional sheetName parameter to merge seamlessly into multi-sheet workbooks.
-func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, mScriptPath string, engine *duckdb.Engine, sheetName ...string) error {
-	if csvPath == "" {
-		csvPath = "report_excel.csv"
+// ExportExcel exports:
+// 1. Native Excel workbook (.xlsx) with styled sheets and AutoFilter.
+// 2. CSV dataset (.csv) for lightweight ingestion.
+// 3. Power Query .m formula file (*_excel.m) pointing directly to the CSV file with an absolute path.
+func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, outPath, mScriptPath string, engine *duckdb.Engine, sheetName ...string) error {
+	basePath := outPath
+	if basePath == "" {
+		basePath = "report_excel"
 	}
-	if mScriptPath == "" {
-		mScriptPath = "report_excel.m"
+	lower := strings.ToLower(basePath)
+	if strings.HasSuffix(lower, ".xlsx") {
+		basePath = basePath[:len(basePath)-5]
+	} else if strings.HasSuffix(lower, ".csv") {
+		basePath = basePath[:len(basePath)-4]
+	} else if strings.HasSuffix(lower, ".m") {
+		basePath = basePath[:len(basePath)-2]
 	}
 
-	xlsxPath := EnsureXLSXExtension(csvPath)
+	xlsxPath := basePath + ".xlsx"
+	csvPath := basePath + ".csv"
+	if mScriptPath == "" {
+		mScriptPath = basePath + "_excel.m"
+	}
+
+	// 1. Export Native Excel Workbook (.xlsx)
 	targetSheet := DefaultEnrichedSheet
 	if len(sheetName) > 0 && sheetName[0] != "" {
 		targetSheet = sheetName[0]
 	}
-	_ = ExportEnrichedToXLSX(records, xlsxPath, targetSheet)
+	if err := ExportEnrichedToXLSX(records, xlsxPath, targetSheet); err != nil {
+		return fmt.Errorf("failed exporting to excel xlsx: %w", err)
+	}
 
+	// 2. Export CSV Dataset (.csv)
 	tempParquet := csvPath + ".tmp.parquet"
 	defer os.Remove(tempParquet)
 
 	if err := engine.WriteEnrichedParquet(ctx, records, tempParquet); err != nil {
-		return fmt.Errorf("failed writing intermediate parquet for excel: %w", err)
+		return fmt.Errorf("failed writing intermediate parquet for excel csv: %w", err)
 	}
 
 	if err := engine.ExportToCSV(ctx, tempParquet, csvPath); err != nil {
 		return fmt.Errorf("failed to export excel csv: %w", err)
 	}
 
-	mCode := powerquery.GenerateParquetMScript(csvPath)
-	_ = powerquery.WriteMScriptToFile(mCode, mScriptPath)
+	// 3. Generate Power Query .m Formula file pointing to the CSV file
+	mCode := powerquery.GenerateEnrichedCsvMScript(csvPath)
+	if err := powerquery.WriteMScriptToFile(mCode, mScriptPath); err != nil {
+		return fmt.Errorf("failed writing excel power query .m file: %w", err)
+	}
 
-	fmt.Printf("[Excel Export Ready]\n")
+	fmt.Printf("[Excel & Power Query Export Ready]\n")
 	fmt.Printf("  -> Native Excel Workbook (.xlsx): %s (Sheet: %s)\n", xlsxPath, targetSheet)
 	fmt.Printf("  -> CSV Dataset: %s\n", csvPath)
-	fmt.Printf("  -> Power Query .m Formula: %s\n", mScriptPath)
+	fmt.Printf("  -> Power Query .m Formula (CSV Source): %s\n", mScriptPath)
 	return nil
 }
