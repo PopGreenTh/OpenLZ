@@ -6,11 +6,14 @@ vars:
   PORT: '8080'
   CACHE_DB: 'openlz_cache.duckdb'
 
+env:
+  CGO_LDFLAGS: '-Wl,--no-keep-memory'
+
 tasks:
   build:
     desc: Compile the OpenLZ CLI binary
     cmds:
-      - go build -tags=no_duckdb_arrow -o {{.BINARY}} main.go
+      - go build -tags=no_duckdb_arrow -ldflags="-s -w" -o {{.BINARY}} main.go
     sources:
       - '**/*.go'
     generates:
@@ -19,17 +22,17 @@ tasks:
   build:finops:
     desc: Compile the dedicated OpenLZ FinOps CLI binary
     cmds:
-      - go build -tags=no_duckdb_arrow -o openlz-finops.exe ./cmd/openlz-finops
+      - go build -tags=no_duckdb_arrow -ldflags="-s -w" -o openlz-finops.exe ./cmd/openlz-finops
 
   build:secops:
     desc: Compile the dedicated OpenLZ SecOps CLI binary
     cmds:
-      - go build -tags=no_duckdb_arrow -o openlz-secops.exe ./cmd/openlz-secops
+      - go build -tags=no_duckdb_arrow -ldflags="-s -w" -o openlz-secops.exe ./cmd/openlz-secops
 
   build:cloudops:
     desc: Compile the dedicated OpenLZ CloudOps CLI binary
     cmds:
-      - go build -tags=no_duckdb_arrow -o openlz-cloudops.exe ./cmd/openlz-cloudops
+      - go build -tags=no_duckdb_arrow -ldflags="-s -w" -o openlz-cloudops.exe ./cmd/openlz-cloudops
 
   build:all:
     desc: Compile all OpenLZ binaries (unified and per-ops dedicated)

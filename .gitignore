@@ -16,6 +16,7 @@ openlz_cache.duckdb
 data/
 *.parquet
 *.csv
+*.xlsx
 *.m
 
 # Go workspace / test artifacts

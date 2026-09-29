@@ -50,6 +50,26 @@ func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.St
 		} else {
 			fmt.Println(md)
 		}
+	case "powerbi":
+		mOut := "cloudops_report.m"
+		pOut := "cloudops_report.parquet"
+		if in.OutputPath != "" {
+			pOut = in.OutputPath
+			mOut = in.OutputPath + ".m"
+		}
+		if err := report.ExportPowerBI(ctx, records, pOut, mOut, engine); err != nil {
+			return nil, err
+		}
+	case "excel":
+		cOut := "cloudops_report.csv"
+		mOut := "cloudops_report_excel.m"
+		if in.OutputPath != "" {
+			cOut = in.OutputPath
+			mOut = in.OutputPath + ".m"
+		}
+		if err := report.ExportExcel(ctx, records, cOut, mOut, engine, report.DefaultCloudOpsSheet); err != nil {
+			return nil, err
+		}
 	default:
 		report.RenderConsoleTable(records, "CloudOps")
 	}

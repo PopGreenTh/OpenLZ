@@ -96,7 +96,8 @@ func ExportPowerBI(ctx context.Context, records []cloud.EnrichedRecord, parquetP
 }
 
 // ExportExcel exports native XLSX workbook, CSV dataset, and writes an Excel Power Query snippet.
-func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, mScriptPath string, engine *duckdb.Engine) error {
+// It accepts an optional sheetName parameter to merge seamlessly into multi-sheet workbooks.
+func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, mScriptPath string, engine *duckdb.Engine, sheetName ...string) error {
 	if csvPath == "" {
 		csvPath = "report_excel.csv"
 	}
@@ -104,8 +105,12 @@ func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, m
 		mScriptPath = "report_excel.m"
 	}
 
-	xlsxPath := strings.TrimSuffix(csvPath, ".csv") + ".xlsx"
-	_ = ExportEnrichedToXLSX(records, xlsxPath)
+	xlsxPath := EnsureXLSXExtension(csvPath)
+	targetSheet := DefaultEnrichedSheet
+	if len(sheetName) > 0 && sheetName[0] != "" {
+		targetSheet = sheetName[0]
+	}
+	_ = ExportEnrichedToXLSX(records, xlsxPath, targetSheet)
 
 	tempParquet := csvPath + ".tmp.parquet"
 	defer os.Remove(tempParquet)
@@ -122,6 +127,7 @@ func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, m
 	_ = powerquery.WriteMScriptToFile(mCode, mScriptPath)
 
 	fmt.Printf("[Excel Export Ready]\n")
+	fmt.Printf("  -> Native Excel Workbook (.xlsx): %s (Sheet: %s)\n", xlsxPath, targetSheet)
 	fmt.Printf("  -> CSV Dataset: %s\n", csvPath)
 	fmt.Printf("  -> Power Query .m Formula: %s\n", mScriptPath)
 	return nil
