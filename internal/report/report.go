@@ -95,7 +95,7 @@ func ExportPowerBI(ctx context.Context, records []cloud.EnrichedRecord, parquetP
 	return nil
 }
 
-// ExportExcel exports CSV dataset and writes an Excel Power Query snippet.
+// ExportExcel exports native XLSX workbook, CSV dataset, and writes an Excel Power Query snippet.
 func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, mScriptPath string, engine *duckdb.Engine) error {
 	if csvPath == "" {
 		csvPath = "report_excel.csv"
@@ -103,6 +103,9 @@ func ExportExcel(ctx context.Context, records []cloud.EnrichedRecord, csvPath, m
 	if mScriptPath == "" {
 		mScriptPath = "report_excel.m"
 	}
+
+	xlsxPath := strings.TrimSuffix(csvPath, ".csv") + ".xlsx"
+	_ = ExportEnrichedToXLSX(records, xlsxPath)
 
 	tempParquet := csvPath + ".tmp.parquet"
 	defer os.Remove(tempParquet)

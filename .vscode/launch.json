@@ -28,7 +28,7 @@
                 "--secondary-tag",
                 "Application",
                 "--format",
-                "excel,parquet",
+                "csv,parquet,excel",
                 "--output",
                 "data/finops_raw"
             ],
