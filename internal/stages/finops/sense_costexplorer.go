@@ -188,20 +188,21 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 				return r == ',' || r == ' ' || r == ';'
 			})
 			for _, t := range tokens {
-				switch strings.TrimSpace(t) {
-				case "all":
+				token := strings.TrimSpace(t)
+				switch {
+				case token == "all":
 					wantParquet = true
 					wantCSV = true
 					wantExcel = true
 					wantPowerBI = true
-				case "parquet":
+				case token == "parquet" || token == "par" || token == "pq":
 					wantParquet = true
-				case "csv":
+				case token == "csv":
 					wantCSV = true
-				case "excel":
+				case token == "excel" || token == "xls" || token == "xlsx":
 					wantCSV = true
 					wantExcel = true
-				case "powerbi":
+				case token == "powerbi" || token == "pbi":
 					wantParquet = true
 					wantPowerBI = true
 				}

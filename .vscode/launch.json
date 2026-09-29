@@ -26,8 +26,10 @@
                 "Project",
                 "--secondary-tag",
                 "Application",
+                "--format",
+                "excel,parquet",
                 "--output",
-                "data/finops_raw.parquet"
+                "data/finops_raw"
             ],
             "env": {
                 "AWS_REGION": "ap-southeast-1",

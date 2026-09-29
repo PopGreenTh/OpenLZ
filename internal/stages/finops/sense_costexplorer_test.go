@@ -502,6 +502,33 @@ func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
 	if !strings.Contains(csvContent, "account_id") || !strings.Contains(csvContent, "recorded_at") {
 		t.Errorf("csv missing expected column headers: %s", csvContent[:min(100, len(csvContent))])
 	}
+
+	// Also test bare path without extension + "excel,par" aliases
+	bareBase := filepath.Join(tempDir, "finops_bare")
+	resBare, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:    []string{"111122223333"},
+		Format:      "excel,par",
+		OutputPath:  bareBase, // Notice: No extension specified!
+		CacheDBPath: filepath.Join(tempDir, "cache2.duckdb"),
+		Mock:        true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSenseCostExplorer with bare path failed: %v", err)
+	}
+	if !resBare.Success || resBare.RecordCount == 0 {
+		t.Fatalf("expected positive record count for bare path, got %d", resBare.RecordCount)
+	}
+
+	// Verify all expected extensions are automatically appended to bare path
+	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.parquet")); os.IsNotExist(err) {
+		t.Errorf("expected finops_bare.parquet to be created automatically")
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.csv")); os.IsNotExist(err) {
+		t.Errorf("expected finops_bare.csv to be created automatically")
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare_excel.m")); os.IsNotExist(err) {
+		t.Errorf("expected finops_bare_excel.m to be created automatically")
+	}
 }
 
 func min(a, b int) int {
