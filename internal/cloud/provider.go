@@ -79,22 +79,34 @@ type AnomalyRecord struct {
 
 // EnrichedRecord represents an anomaly or finding joined with organizational metadata.
 type EnrichedRecord struct {
-	OpsDomain         string    `json:"ops_domain"`
-	AccountID         string    `json:"account_id"`
-	AccountName       string    `json:"account_name"`
-	Environment       string    `json:"environment"`  // Production, Staging, Development, Sandbox
-	BusinessUnit      string    `json:"business_unit"` // E-Commerce, Core Platform, Data & AI, Security
-	Owner             string    `json:"owner"`         // Team or individual email
-	CostCenter        string    `json:"cost_center"`
-	Service           string    `json:"service"`
-	ResourceOrKey     string    `json:"resource_or_key"`
-	Metric            string    `json:"metric"`
-	ActualValue       float64   `json:"actual_value"`
-	ExpectedValue     float64   `json:"expected_value"`
-	PotentialSavings  float64   `json:"potential_savings"`
-	Severity          string    `json:"severity"`
-	ActionRecommended string    `json:"action_recommended"`
-	Timestamp         time.Time `json:"timestamp"`
+	OpsDomain          string    `json:"ops_domain"`
+	AccountID          string    `json:"account_id"`
+	AccountName        string    `json:"account_name"`
+	Environment        string    `json:"environment"`   // Production, Staging, Development, Sandbox
+	BusinessUnit       string    `json:"business_unit"` // E-Commerce, Core Platform, Data & AI, Security
+	Owner              string    `json:"owner"`         // Team or individual email
+	CostCenter         string    `json:"cost_center"`
+	Service            string    `json:"service"`
+	ResourceOrKey      string    `json:"resource_or_key"`
+	Metric             string    `json:"metric"`
+	ActualValue        float64   `json:"actual_value"`
+	ExpectedValue      float64   `json:"expected_value"`
+	PotentialSavings   float64   `json:"potential_savings"`
+	Severity           string    `json:"severity"`
+	ActionRecommended  string    `json:"action_recommended"`
+	ProjectID          string    `json:"project_id,omitempty"`
+	Project            string    `json:"project,omitempty"`
+	ApplicationID      string    `json:"application_id,omitempty"`
+	Application        string    `json:"application,omitempty"`
+	EnvironmentID      string    `json:"environment_id,omitempty"`
+	ServiceCategoryID  string    `json:"service_category_id,omitempty"`
+	ServiceCategory    string    `json:"service_category,omitempty"`
+	BusinessUnitID     string    `json:"business_unit_id,omitempty"`
+	OwnerID            string    `json:"owner_id,omitempty"`
+	CostCenterID       string    `json:"cost_center_id,omitempty"`
+	CustomerFunctionID string    `json:"customer_function_id,omitempty"`
+	CustomerFunction   string    `json:"customer_function,omitempty"`
+	Timestamp          time.Time `json:"timestamp"`
 }
 
 // EnforceAuditRecord captures the result of policy enforcement or remediation.

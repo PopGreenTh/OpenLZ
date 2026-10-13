@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/PopGreenTh/OpenLZ/internal/aws"
 	"github.com/PopGreenTh/OpenLZ/internal/cache"
@@ -37,15 +38,20 @@ type SenseCostExplorerInput struct {
 	MinCostThreshold float64  `json:"minCostThreshold"`
 	Format           string   `json:"format"` // "parquet", "csv", "excel", "powerbi", "all" (or comma-separated)
 	OutputPath       string   `json:"outputPath"`
+	AppendTimestamp  bool     `json:"appendTimestamp"`
+	AppendOutput     bool     `json:"appendOutput"`
+	Upsert           bool     `json:"upsert"`
 	CacheDBPath      string   `json:"cacheDBPath"`
 	NoCache          bool     `json:"noCache"`
 	Mock             bool     `json:"mock"`
+	Tenant           string   `json:"tenant"`
 }
 
 // ExecuteSenseCostExplorer runs Stage 1a: AWS Cost Explorer Sense.
 func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/finops_raw.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/finops_raw.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.CacheDBPath == "" {
@@ -66,6 +72,25 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			in.GroupBy = "LINKED_ACCOUNT_SERVICE"
 		} else {
 			in.GroupBy = "SERVICE"
+		}
+	}
+	if in.PrimaryTag == "" {
+		if envPrimary := os.Getenv("OPENLZ_PRIMARY_TAG"); envPrimary != "" {
+			in.PrimaryTag = strings.TrimSpace(envPrimary)
+		}
+	}
+	if in.SecondaryTag == "" {
+		if envSecondary := os.Getenv("OPENLZ_SECONDARY_TAG"); envSecondary != "" {
+			in.SecondaryTag = strings.TrimSpace(envSecondary)
+		}
+	}
+	if len(in.GroupByTags) == 0 {
+		if envTags := os.Getenv("OPENLZ_GROUP_BY_TAGS"); envTags != "" {
+			for _, t := range strings.Split(envTags, ",") {
+				if tr := strings.TrimSpace(t); tr != "" {
+					in.GroupByTags = append(in.GroupByTags, tr)
+				}
+			}
 		}
 	}
 	if len(in.GroupByTags) == 0 {
@@ -164,13 +189,7 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 
 	var generatedOutputs []string
 	if in.OutputPath != "" {
-		basePath := in.OutputPath
-		for _, ext := range []string{".parquet", ".csv", ".m", ".xlsx"} {
-			if strings.HasSuffix(strings.ToLower(basePath), ext) {
-				basePath = basePath[:len(basePath)-len(ext)]
-				break
-			}
-		}
+		basePath := types.StripExtensions(in.OutputPath)
 
 		fmtReq := strings.ToLower(strings.TrimSpace(in.Format))
 		wantParquet := false
@@ -210,6 +229,14 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			}
 		}
 
+		now := time.Now()
+		tsSuffix := types.FormatTimestamp(now)
+
+		// Each sense run must have a datetime suffix (_YYYYMMDD_HHMMSS)
+		timestampedBase := fmt.Sprintf("%s_%s", basePath, tsSuffix)
+		timestampedParquet := timestampedBase + ".parquet"
+		originalParquet := basePath + ".parquet"
+
 		slog.InfoContext(ctx, "Writing FinOps records to storage",
 			"recordCount", len(records),
 			"outputPath", in.OutputPath,
@@ -218,25 +245,35 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			"csv", wantCSV,
 			"excel", wantExcel,
 			"powerbi", wantPowerBI,
+			"timestampedParquet", timestampedParquet,
+			"appendOutput", in.AppendOutput || in.Upsert,
 		)
 
-		parquetPath := basePath + ".parquet"
-		if err := engine.WriteFinOpsParquet(ctx, records, parquetPath); err != nil {
-			return nil, fmt.Errorf("failed writing raw finops parquet: %w", err)
+		// Always write the timestamped immutable parquet snapshot
+		if err := engine.WriteFinOpsParquet(ctx, records, timestampedParquet); err != nil {
+			return nil, fmt.Errorf("failed writing timestamped raw finops parquet: %w", err)
 		}
 		if wantParquet {
-			generatedOutputs = append(generatedOutputs, parquetPath)
+			generatedOutputs = append(generatedOutputs, timestampedParquet)
+		}
+
+		// Option to append/upsert to the original --output
+		if in.AppendOutput || in.Upsert {
+			if err := engine.UpsertFinOpsParquet(ctx, records, originalParquet); err != nil {
+				return nil, fmt.Errorf("failed appending/upserting to original finops parquet: %w", err)
+			}
+			generatedOutputs = append(generatedOutputs, originalParquet)
 		}
 
 		if wantCSV || wantExcel {
-			csvPath := basePath + ".csv"
-			if err := engine.ExportToCSV(ctx, parquetPath, csvPath); err != nil {
+			csvPath := timestampedBase + ".csv"
+			if err := engine.ExportToCSV(ctx, timestampedParquet, csvPath); err != nil {
 				return nil, fmt.Errorf("failed exporting to csv: %w", err)
 			}
 			generatedOutputs = append(generatedOutputs, csvPath)
 
 			// Every CSV export must come with a Power Query .m file pointing to it
-			excelMPath := basePath + "_excel.m"
+			excelMPath := timestampedBase + "_excel.m"
 			mCode := powerquery.GenerateRawFinOpsCsvMScript(csvPath)
 			if err := powerquery.WriteMScriptToFile(mCode, excelMPath); err != nil {
 				return nil, fmt.Errorf("failed writing excel power query .m file: %w", err)
@@ -244,7 +281,7 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 			generatedOutputs = append(generatedOutputs, excelMPath)
 
 			if wantExcel {
-				xlsxPath := basePath + ".xlsx"
+				xlsxPath := timestampedBase + ".xlsx"
 				if err := report.ExportFinOpsToXLSX(records, xlsxPath); err != nil {
 					return nil, fmt.Errorf("failed exporting to excel xlsx: %w", err)
 				}
@@ -253,17 +290,17 @@ func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*
 		}
 
 		if wantPowerBI {
-			powerbiMPath := basePath + "_powerbi.m"
-			mCode := powerquery.GenerateRawFinOpsParquetMScript(parquetPath)
+			powerbiMPath := timestampedBase + "_powerbi.m"
+			mCode := powerquery.GenerateRawFinOpsParquetMScript(timestampedParquet)
 			if err := powerquery.WriteMScriptToFile(mCode, powerbiMPath); err != nil {
 				return nil, fmt.Errorf("failed writing powerbi power query .m file: %w", err)
 			}
 			generatedOutputs = append(generatedOutputs, powerbiMPath)
 		}
 
-		// If user only wanted CSV and not Parquet, clean up the temporary Parquet file
-		if !wantParquet && !wantPowerBI && (wantCSV || wantExcel) {
-			_ = os.Remove(parquetPath)
+		// If user only wanted CSV/Excel and not Parquet, clean up the temporary Parquet snapshot unless requested
+		if !wantParquet && !wantPowerBI && !in.AppendOutput && !in.Upsert && (wantCSV || wantExcel) {
+			_ = os.Remove(timestampedParquet)
 		}
 	}
 

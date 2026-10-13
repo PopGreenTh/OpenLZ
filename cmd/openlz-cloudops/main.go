@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	verbose  bool
-	logLevel string
+	verbose    bool
+	logLevel   string
+	rootTenant string
 )
 
 var rootCmd = &cobra.Command{
@@ -32,13 +33,18 @@ Sense (Operational Hygiene) -> Analyze (Waste & Stale Assets) -> Enrich (Lifecyc
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&rootTenant, "tenant", "", "Tenant identifier for multi-tenant file separation")
 
 	// 1. sense-hygiene
 	var (
-		cSenseAccs string
-		cSenseSvc  string
-		cSenseOut  string
-		cSenseMock bool
+		cSenseAccs         string
+		cSenseSvc          string
+		cSenseFormat       string
+		cSenseOut          string
+		cSenseAppendTS     bool
+		cSenseAppendOutput bool
+		cSenseUpsert       bool
+		cSenseMock         bool
 	)
 	cmdSenseHygiene := &cobra.Command{
 		Use:     "sense-hygiene",
@@ -50,11 +56,20 @@ func init() {
 			if cSenseAccs != "" {
 				accs = strings.Split(cSenseAccs, ",")
 			}
+			out := cSenseOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
-				Accounts:   accs,
-				Service:    cSenseSvc,
-				OutputPath: cSenseOut,
-				Mock:       cSenseMock,
+				Accounts:        accs,
+				Service:         cSenseSvc,
+				Format:          cSenseFormat,
+				OutputPath:      out,
+				AppendTimestamp: cSenseAppendTS,
+				AppendOutput:    cSenseAppendOutput || cSenseUpsert,
+				Upsert:          cSenseAppendOutput || cSenseUpsert,
+				Mock:            cSenseMock,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -65,7 +80,11 @@ func init() {
 	}
 	cmdSenseHygiene.Flags().StringVar(&cSenseAccs, "accounts", "", "Comma-separated AWS Account IDs (auto-detected via STS if omitted)")
 	cmdSenseHygiene.Flags().StringVar(&cSenseSvc, "service", "all", "Service filter (e.g. ec2, ebs, all)")
+	cmdSenseHygiene.Flags().StringVar(&cSenseFormat, "format", "parquet", "Format: parquet, csv, excel, all")
 	cmdSenseHygiene.Flags().StringVar(&cSenseOut, "output", "data/cloudops_raw.parquet", "Output raw parquet path")
+	cmdSenseHygiene.Flags().BoolVarP(&cSenseAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdSenseHygiene.Flags().BoolVarP(&cSenseAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdSenseHygiene.Flags().BoolVarP(&cSenseUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdSenseHygiene.Flags().BoolVar(&cSenseMock, "mock", true, "Use mock/offline cloud data")
 	rootCmd.AddCommand(cmdSenseHygiene)
 
@@ -80,9 +99,18 @@ func init() {
 		Short:   "Stage 2: Detect orphaned volumes, stale snapshots, and waste",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cAnaIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cAnaOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
-				InputPath:  cAnaIn,
-				OutputPath: cAnaOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -106,9 +134,18 @@ func init() {
 		Short:   "Stage 3: Annotate orphaned assets with lifecycle & owner metadata",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cEnrIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cEnrOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
-				InputPath:  cEnrIn,
-				OutputPath: cEnrOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -133,10 +170,19 @@ func init() {
 		Short:   "Stage 4: Clean up orphaned resources and log savings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cEnfIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cEnfOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
-				InputPath:  cEnfIn,
-				OutputPath: cEnfOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
 				DryRun:     cEnfDry,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -152,9 +198,11 @@ func init() {
 
 	// 5. report-summary
 	var (
-		cRepIn  string
-		cRepFmt string
-		cRepOut string
+		cRepIn       string
+		cRepFmt      string
+		cRepOut      string
+		cRepAppendTS bool
+		cRepUpsert   bool
 	)
 	cmdReport := &cobra.Command{
 		Use:     "report-summary",
@@ -162,10 +210,17 @@ func init() {
 		Short:   "Stage 5: Generate CloudOps hygiene report",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cRepIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteReportSummary(ctx, cloudopsstages.ReportSummaryInput{
-				InputPath:  cRepIn,
-				Format:     cRepFmt,
-				OutputPath: cRepOut,
+				InputPath:       inPath,
+				Format:          cRepFmt,
+				OutputPath:      cRepOut,
+				AppendTimestamp: cRepAppendTS,
+				Upsert:          cRepUpsert,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -175,8 +230,10 @@ func init() {
 		},
 	}
 	cmdReport.Flags().StringVar(&cRepIn, "input", "data/cloudops_enriched.parquet", "Input enriched parquet path")
-	cmdReport.Flags().StringVar(&cRepFmt, "format", "table", "Format (table, markdown)")
+	cmdReport.Flags().StringVar(&cRepFmt, "format", "table", "Format (table, markdown, powerbi, excel, csv)")
 	cmdReport.Flags().StringVar(&cRepOut, "output", "", "Output report path")
+	cmdReport.Flags().BoolVarP(&cRepAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdReport.Flags().BoolVarP(&cRepUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 	rootCmd.AddCommand(cmdReport)
 
 	// Lambda simulation command

@@ -3,6 +3,7 @@ package secops
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -15,16 +16,18 @@ type EnforceRemediationInput struct {
 	InputPath  string `json:"inputPath"`
 	OutputPath string `json:"outputPath"`
 	DryRun     bool   `json:"dryRun"`
+	Tenant     string `json:"tenant"`
 }
 
 // ExecuteEnforceRemediation runs Stage 4: SecOps Guardrails Remediation.
 func ExecuteEnforceRemediation(ctx context.Context, in EnforceRemediationInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = "data/secops_enriched.parquet"
+		in.InputPath = types.AppendTenantToPath("data/secops_enriched.parquet", in.Tenant)
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/secops_audit.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/secops_audit.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 

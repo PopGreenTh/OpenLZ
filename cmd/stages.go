@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/stages"
 	cloudopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/cloudops"
 	finopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/finops"
 	secopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/secops"
+	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +64,9 @@ func init() {
 		fSenseEnd           string
 		fSenseSvc           string
 		fSenseOut           string
+		fSenseAppendTS      bool
+		fSenseAppendOutput  bool
+		fSenseUpsert        bool
 		fSenseMock          bool
 		fSenseNoCache       bool
 		fSenseCacheDB       string
@@ -69,12 +74,16 @@ func init() {
 		fAnomStart          string
 		fAnomEnd            string
 		fAnomOut            string
+		fAnomAppendOutput   bool
+		fAnomUpsert         bool
 		fAnomMock           bool
 		fAnaIn              string
 		fAnaOut             string
 		fAnaThresh          float64
 		fEnrIn              string
 		fEnrOut             string
+		fEnrProjectTax      string
+		fEnrBusinessTax     string
 		fEnfIn              string
 		fEnfOut             string
 		fEnfDry             bool
@@ -93,6 +102,21 @@ func init() {
 			if fSenseAccs != "" {
 				accs = strings.Split(fSenseAccs, ",")
 			}
+			if !cmd.Flags().Changed("group-by-tags") {
+				if env := os.Getenv("OPENLZ_GROUP_BY_TAGS"); env != "" {
+					fSenseTags = env
+				}
+			}
+			if !cmd.Flags().Changed("primary-tag") {
+				if env := os.Getenv("OPENLZ_PRIMARY_TAG"); env != "" {
+					fSensePrimaryTag = env
+				}
+			}
+			if !cmd.Flags().Changed("secondary-tag") {
+				if env := os.Getenv("OPENLZ_SECONDARY_TAG"); env != "" {
+					fSenseSecondaryTag = env
+				}
+			}
 			var tags []string
 			if fSenseTags != "" {
 				for _, t := range strings.Split(fSenseTags, ",") {
@@ -100,6 +124,10 @@ func init() {
 						tags = append(tags, tr)
 					}
 				}
+			}
+			out := fSenseOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
 			}
 			res, err := finopsstages.ExecuteSenseCostExplorer(ctx, finopsstages.SenseCostExplorerInput{
 				Accounts:         accs,
@@ -118,10 +146,14 @@ func init() {
 				ExcludeCredits:   fSenseExclCred,
 				MinCostThreshold: fSenseMinCost,
 				Format:           fSenseFormat,
-				OutputPath:       fSenseOut,
+				OutputPath:       out,
+				AppendTimestamp:  fSenseAppendTS,
+				AppendOutput:     fSenseAppendOutput || fSenseUpsert,
+				Upsert:           fSenseAppendOutput || fSenseUpsert,
 				CacheDBPath:      fSenseCacheDB,
 				NoCache:          fSenseNoCache,
 				Mock:             fSenseMock,
+				Tenant:           rootTenant,
 			})
 			if err != nil {
 				return err
@@ -147,6 +179,9 @@ func init() {
 	cmdFinOpsSenseCE.Flags().StringVar(&fSenseEnd, "end-date", "", "End date (YYYY-MM-DD)")
 	cmdFinOpsSenseCE.Flags().StringVar(&fSenseSvc, "service", "all", "Service filter (e.g. ec2, s3, all)")
 	cmdFinOpsSenseCE.Flags().StringVar(&fSenseOut, "output", "data/finops_raw.parquet", "Output raw file path")
+	cmdFinOpsSenseCE.Flags().BoolVarP(&fSenseAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdFinOpsSenseCE.Flags().BoolVarP(&fSenseAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdFinOpsSenseCE.Flags().BoolVarP(&fSenseUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdFinOpsSenseCE.Flags().StringVar(&fSenseCacheDB, "cache-db", "openlz_cache.duckdb", "DuckDB cache file path")
 	cmdFinOpsSenseCE.Flags().BoolVar(&fSenseNoCache, "no-cache", false, "Bypass DuckDB API cache and query live cloud APIs directly")
 	cmdFinOpsSenseCE.Flags().BoolVar(&fSenseMock, "mock", true, "Use mock/offline cloud data")
@@ -162,12 +197,19 @@ func init() {
 			if fAnomAccs != "" {
 				accs = strings.Split(fAnomAccs, ",")
 			}
+			out := fAnomOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
+			}
 			res, err := finopsstages.ExecuteSenseCostAnomaly(ctx, finopsstages.SenseCostAnomalyInput{
-				Accounts:   accs,
-				StartDate:  fAnomStart,
-				EndDate:    fAnomEnd,
-				OutputPath: fAnomOut,
-				Mock:       fAnomMock,
+				Accounts:     accs,
+				StartDate:    fAnomStart,
+				EndDate:      fAnomEnd,
+				OutputPath:   out,
+				AppendOutput: fAnomAppendOutput || fAnomUpsert,
+				Upsert:       fAnomAppendOutput || fAnomUpsert,
+				Mock:         fAnomMock,
+				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -180,6 +222,8 @@ func init() {
 	cmdFinOpsSenseAnom.Flags().StringVar(&fAnomStart, "start-date", "", "Start date (YYYY-MM-DD)")
 	cmdFinOpsSenseAnom.Flags().StringVar(&fAnomEnd, "end-date", "", "End date (YYYY-MM-DD)")
 	cmdFinOpsSenseAnom.Flags().StringVar(&fAnomOut, "output", "data/finops_anomalies.parquet", "Output anomalies parquet path")
+	cmdFinOpsSenseAnom.Flags().BoolVarP(&fAnomAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdFinOpsSenseAnom.Flags().BoolVarP(&fAnomUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdFinOpsSenseAnom.Flags().BoolVar(&fAnomMock, "mock", true, "Use mock/offline cloud data")
 	RootCmd.AddCommand(cmdFinOpsSenseAnom)
 
@@ -189,10 +233,19 @@ func init() {
 		Short: "Dedicated Stage 2: DuckDB OLAP cost variance & spike detection",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := fAnaIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := fAnaOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := finopsstages.ExecuteAnalyzeVarianceImpact(ctx, finopsstages.AnalyzeVarianceImpactInput{
-				InputPath:  fAnaIn,
-				OutputPath: fAnaOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
 				Threshold:  fAnaThresh,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -212,9 +265,20 @@ func init() {
 		Short: "Dedicated Stage 3: Annotate cost anomalies with Landing Zone cost centers & owners",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := fEnrIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := fEnrOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-				InputPath:  fEnrIn,
-				OutputPath: fEnrOut,
+				InputPath:            inPath,
+				OutputPath:           outPath,
+				ProjectTaxonomyPath:  fEnrProjectTax,
+				BusinessTaxonomyPath: fEnrBusinessTax,
+				Tenant:               rootTenant,
 			})
 			if err != nil {
 				return err
@@ -225,6 +289,8 @@ func init() {
 	}
 	cmdFinOpsEnr.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdFinOpsEnr.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
+	cmdFinOpsEnr.Flags().StringVar(&fEnrProjectTax, "project-taxonomy", "", "Project cost hierarchy JSON (default taxonomy/project_taxonomy.json when present)")
+	cmdFinOpsEnr.Flags().StringVar(&fEnrBusinessTax, "business-taxonomy", "", "Business cost hierarchy JSON (default taxonomy/business_taxonomy.json when present)")
 	RootCmd.AddCommand(cmdFinOpsEnr)
 
 	// 4. finops-enforce-tagging
@@ -233,10 +299,19 @@ func init() {
 		Short: "Dedicated Stage 4: Apply CostCenter tagging & guardrail directives",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := fEnfIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := fEnfOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := finopsstages.ExecuteEnforceTagging(ctx, finopsstages.EnforceTaggingInput{
-				InputPath:  fEnfIn,
-				OutputPath: fEnfOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
 				DryRun:     fEnfDry,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -250,16 +325,31 @@ func init() {
 	cmdFinOpsEnf.Flags().BoolVar(&fEnfDry, "dry-run", true, "Perform dry-run simulation without modifying cloud resources")
 	RootCmd.AddCommand(cmdFinOpsEnf)
 
+	var (
+		fRepAppendTS bool
+		fRepUpsert   bool
+	)
 	// 5. finops-report-summary
 	cmdFinOpsRep := &cobra.Command{
 		Use:   stages.StageFinOpsReportSummary,
 		Short: "Dedicated Stage 5: Generate FinOps reports (table, markdown, powerbi, excel)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := fRepIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := fRepOut
+			if !cmd.Flags().Changed("output") && outPath != "" {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := finopsstages.ExecuteReportSummary(ctx, finopsstages.ReportSummaryInput{
-				InputPath:  fRepIn,
-				Format:     fRepFmt,
-				OutputPath: fRepOut,
+				InputPath:       inPath,
+				Format:          fRepFmt,
+				OutputPath:      outPath,
+				AppendTimestamp: fRepAppendTS,
+				Upsert:          fRepUpsert,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -271,29 +361,39 @@ func init() {
 	cmdFinOpsRep.Flags().StringVar(&fRepIn, "input", "data/finops_enriched.parquet", "Input enriched parquet path")
 	cmdFinOpsRep.Flags().StringVar(&fRepFmt, "format", "table", "Format (table, markdown, powerbi, excel)")
 	cmdFinOpsRep.Flags().StringVar(&fRepOut, "output", "", "Output report path")
+	cmdFinOpsRep.Flags().BoolVarP(&fRepAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdFinOpsRep.Flags().BoolVarP(&fRepUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 	RootCmd.AddCommand(cmdFinOpsRep)
 
 	// ==========================================
 	// SecOps Dedicated Stages
 	// ==========================================
 	var (
-		sSenseAccs string
-		sSenseSvc  string
-		sSenseOut  string
-		sSenseMock bool
-		sVulnAccs  string
-		sVulnOut   string
-		sVulnMock  bool
-		sAnaIn     string
-		sAnaOut    string
-		sEnrIn     string
-		sEnrOut    string
-		sEnfIn     string
-		sEnfOut    string
-		sEnfDry    bool
-		sRepIn     string
-		sRepFmt    string
-		sRepOut    string
+		sSenseAccs         string
+		sSenseSvc          string
+		sSenseOut          string
+		sSenseAppendTS     bool
+		sSenseAppendOutput bool
+		sSenseUpsert       bool
+		sSenseMock         bool
+		sVulnAccs          string
+		sVulnOut           string
+		sVulnAppendTS      bool
+		sVulnAppendOutput  bool
+		sVulnUpsert        bool
+		sVulnMock          bool
+		sAnaIn             string
+		sAnaOut            string
+		sEnrIn             string
+		sEnrOut            string
+		sEnfIn             string
+		sEnfOut            string
+		sEnfDry            bool
+		sRepIn             string
+		sRepFmt            string
+		sRepOut            string
+		sRepAppendTS       bool
+		sRepUpsert         bool
 	)
 
 	// 1a. secops-sense-posture
@@ -306,11 +406,19 @@ func init() {
 			if sSenseAccs != "" {
 				accs = strings.Split(sSenseAccs, ",")
 			}
+			out := sSenseOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
+			}
 			res, err := secopsstages.ExecuteSensePosture(ctx, secopsstages.SensePostureInput{
-				Accounts:   accs,
-				Service:    sSenseSvc,
-				OutputPath: sSenseOut,
-				Mock:       sSenseMock,
+				Accounts:        accs,
+				Service:         sSenseSvc,
+				OutputPath:      out,
+				AppendTimestamp: sSenseAppendTS,
+				AppendOutput:    sSenseAppendOutput || sSenseUpsert,
+				Upsert:          sSenseAppendOutput || sSenseUpsert,
+				Mock:            sSenseMock,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -322,6 +430,9 @@ func init() {
 	cmdSecOpsSense.Flags().StringVar(&sSenseAccs, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")
 	cmdSecOpsSense.Flags().StringVar(&sSenseSvc, "service", "all", "Service filter (e.g. s3, iam, ec2, all)")
 	cmdSecOpsSense.Flags().StringVar(&sSenseOut, "output", "data/secops_raw.parquet", "Output raw parquet path")
+	cmdSecOpsSense.Flags().BoolVarP(&sSenseAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdSecOpsSense.Flags().BoolVarP(&sSenseAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdSecOpsSense.Flags().BoolVarP(&sSenseUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdSecOpsSense.Flags().BoolVar(&sSenseMock, "mock", true, "Use mock/offline cloud data")
 	RootCmd.AddCommand(cmdSecOpsSense)
 
@@ -335,10 +446,18 @@ func init() {
 			if sVulnAccs != "" {
 				accs = strings.Split(sVulnAccs, ",")
 			}
+			out := sVulnOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
+			}
 			res, err := secopsstages.ExecuteSenseVulner(ctx, secopsstages.SenseVulnerInput{
-				Accounts:   accs,
-				OutputPath: sVulnOut,
-				Mock:       sVulnMock,
+				Accounts:        accs,
+				OutputPath:      out,
+				AppendTimestamp: sVulnAppendTS,
+				AppendOutput:    sVulnAppendOutput || sVulnUpsert,
+				Upsert:          sVulnAppendOutput || sVulnUpsert,
+				Mock:            sVulnMock,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -349,6 +468,9 @@ func init() {
 	}
 	cmdSecOpsVuln.Flags().StringVar(&sVulnAccs, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")
 	cmdSecOpsVuln.Flags().StringVar(&sVulnOut, "output", "data/secops_vulner_raw.parquet", "Output vulnerabilities parquet path")
+	cmdSecOpsVuln.Flags().BoolVarP(&sVulnAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdSecOpsVuln.Flags().BoolVarP(&sVulnAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdSecOpsVuln.Flags().BoolVarP(&sVulnUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdSecOpsVuln.Flags().BoolVar(&sVulnMock, "mock", true, "Use mock/offline cloud data")
 	RootCmd.AddCommand(cmdSecOpsVuln)
 
@@ -358,9 +480,18 @@ func init() {
 		Short: "Dedicated Stage 2: Evaluate security risks and extract critical findings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := sAnaIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := sAnaOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := secopsstages.ExecuteAnalysisRiskPosture(ctx, secopsstages.AnalysisRiskPostureInput{
-				InputPath:  sAnaIn,
-				OutputPath: sAnaOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -379,9 +510,18 @@ func init() {
 		Short: "Dedicated Stage 3: Annotate security findings with blast radius & ownership",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := sEnrIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := sEnrOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := secopsstages.ExecuteEnrichMetadata(ctx, secopsstages.EnrichMetadataInput{
-				InputPath:  sEnrIn,
-				OutputPath: sEnrOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -400,10 +540,19 @@ func init() {
 		Short: "Dedicated Stage 4: Remediate open access and enforce security guardrails",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := sEnfIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := sEnfOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := secopsstages.ExecuteEnforceRemediation(ctx, secopsstages.EnforceRemediationInput{
-				InputPath:  sEnfIn,
-				OutputPath: sEnfOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
 				DryRun:     sEnfDry,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -423,10 +572,21 @@ func init() {
 		Short: "Dedicated Stage 5: Generate SecOps summary report",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := sRepIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := sRepOut
+			if !cmd.Flags().Changed("output") && outPath != "" {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := secopsstages.ExecuteReportSummary(ctx, secopsstages.ReportSummaryInput{
-				InputPath:  sRepIn,
-				Format:     sRepFmt,
-				OutputPath: sRepOut,
+				InputPath:       inPath,
+				Format:          sRepFmt,
+				OutputPath:      outPath,
+				AppendTimestamp: sRepAppendTS,
+				Upsert:          sRepUpsert,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -436,28 +596,35 @@ func init() {
 		},
 	}
 	cmdSecOpsRep.Flags().StringVar(&sRepIn, "input", "data/secops_enriched.parquet", "Input enriched parquet path")
-	cmdSecOpsRep.Flags().StringVar(&sRepFmt, "format", "table", "Format (table, markdown)")
+	cmdSecOpsRep.Flags().StringVar(&sRepFmt, "format", "table", "Format (table, markdown, powerbi, excel, csv)")
 	cmdSecOpsRep.Flags().StringVar(&sRepOut, "output", "", "Output report path")
+	cmdSecOpsRep.Flags().BoolVarP(&sRepAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdSecOpsRep.Flags().BoolVarP(&sRepUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 	RootCmd.AddCommand(cmdSecOpsRep)
 
 	// ==========================================
 	// CloudOps Dedicated Stages
 	// ==========================================
 	var (
-		cSenseAccs string
-		cSenseSvc  string
-		cSenseOut  string
-		cSenseMock bool
-		cAnaIn     string
-		cAnaOut    string
-		cEnrIn     string
-		cEnrOut    string
-		cEnfIn     string
-		cEnfOut    string
-		cEnfDry    bool
-		cRepIn     string
-		cRepFmt    string
-		cRepOut    string
+		cSenseAccs         string
+		cSenseSvc          string
+		cSenseOut          string
+		cSenseAppendTS     bool
+		cSenseAppendOutput bool
+		cSenseUpsert       bool
+		cSenseMock         bool
+		cAnaIn             string
+		cAnaOut            string
+		cEnrIn             string
+		cEnrOut            string
+		cEnfIn             string
+		cEnfOut            string
+		cEnfDry            bool
+		cRepIn             string
+		cRepFmt            string
+		cRepOut            string
+		cRepAppendTS       bool
+		cRepUpsert         bool
 	)
 
 	// 1. cloudops-sense-hygiene
@@ -470,11 +637,19 @@ func init() {
 			if cSenseAccs != "" {
 				accs = strings.Split(cSenseAccs, ",")
 			}
+			out := cSenseOut
+			if !cmd.Flags().Changed("output") {
+				out = types.AppendTenantToPath(out, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
-				Accounts:   accs,
-				Service:    cSenseSvc,
-				OutputPath: cSenseOut,
-				Mock:       cSenseMock,
+				Accounts:        accs,
+				Service:         cSenseSvc,
+				OutputPath:      out,
+				AppendTimestamp: cSenseAppendTS,
+				AppendOutput:    cSenseAppendOutput || cSenseUpsert,
+				Upsert:          cSenseAppendOutput || cSenseUpsert,
+				Mock:            cSenseMock,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -486,6 +661,9 @@ func init() {
 	cmdCloudOpsSense.Flags().StringVar(&cSenseAccs, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")
 	cmdCloudOpsSense.Flags().StringVar(&cSenseSvc, "service", "all", "Service filter (e.g. ec2, ebs, all)")
 	cmdCloudOpsSense.Flags().StringVar(&cSenseOut, "output", "data/cloudops_raw.parquet", "Output raw parquet path")
+	cmdCloudOpsSense.Flags().BoolVarP(&cSenseAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdCloudOpsSense.Flags().BoolVarP(&cSenseAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cmdCloudOpsSense.Flags().BoolVarP(&cSenseUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cmdCloudOpsSense.Flags().BoolVar(&cSenseMock, "mock", true, "Use mock/offline cloud data")
 	RootCmd.AddCommand(cmdCloudOpsSense)
 
@@ -495,9 +673,18 @@ func init() {
 		Short: "Dedicated Stage 2: Detect orphaned volumes, stale snapshots, and waste",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cAnaIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cAnaOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
-				InputPath:  cAnaIn,
-				OutputPath: cAnaOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -516,9 +703,18 @@ func init() {
 		Short: "Dedicated Stage 3: Annotate orphaned assets with lifecycle & owner metadata",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cEnrIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cEnrOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
-				InputPath:  cEnrIn,
-				OutputPath: cEnrOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -537,10 +733,19 @@ func init() {
 		Short: "Dedicated Stage 4: Clean up orphaned resources and log savings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cEnfIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cEnfOut
+			if !cmd.Flags().Changed("output") {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
-				InputPath:  cEnfIn,
-				OutputPath: cEnfOut,
+				InputPath:  inPath,
+				OutputPath: outPath,
 				DryRun:     cEnfDry,
+				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -560,10 +765,21 @@ func init() {
 		Short: "Dedicated Stage 5: Generate CloudOps hygiene report",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
+			inPath := cRepIn
+			if !cmd.Flags().Changed("input") {
+				inPath = types.AppendTenantToPath(inPath, rootTenant)
+			}
+			outPath := cRepOut
+			if !cmd.Flags().Changed("output") && outPath != "" {
+				outPath = types.AppendTenantToPath(outPath, rootTenant)
+			}
 			res, err := cloudopsstages.ExecuteReportSummary(ctx, cloudopsstages.ReportSummaryInput{
-				InputPath:  cRepIn,
-				Format:     cRepFmt,
-				OutputPath: cRepOut,
+				InputPath:       inPath,
+				Format:          cRepFmt,
+				OutputPath:      outPath,
+				AppendTimestamp: cRepAppendTS,
+				Upsert:          cRepUpsert,
+				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -573,7 +789,9 @@ func init() {
 		},
 	}
 	cmdCloudOpsRep.Flags().StringVar(&cRepIn, "input", "data/cloudops_enriched.parquet", "Input enriched parquet path")
-	cmdCloudOpsRep.Flags().StringVar(&cRepFmt, "format", "table", "Format (table, markdown)")
+	cmdCloudOpsRep.Flags().StringVar(&cRepFmt, "format", "table", "Format (table, markdown, powerbi, excel, csv)")
 	cmdCloudOpsRep.Flags().StringVar(&cRepOut, "output", "", "Output report path")
+	cmdCloudOpsRep.Flags().BoolVarP(&cRepAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cmdCloudOpsRep.Flags().BoolVarP(&cRepUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 	RootCmd.AddCommand(cmdCloudOpsRep)
 }

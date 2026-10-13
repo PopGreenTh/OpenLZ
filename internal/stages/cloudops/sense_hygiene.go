@@ -14,16 +14,22 @@ import (
 
 // SenseHygieneInput models inputs for cloudops-sense-hygiene.
 type SenseHygieneInput struct {
-	Accounts   []string `json:"accounts"`
-	Service    string   `json:"service"`
-	OutputPath string   `json:"outputPath"`
-	Mock       bool     `json:"mock"`
+	Accounts        []string `json:"accounts"`
+	Service         string   `json:"service"`
+	Format          string   `json:"format"`
+	OutputPath      string   `json:"outputPath"`
+	AppendTimestamp bool     `json:"appendTimestamp"`
+	AppendOutput    bool     `json:"appendOutput"`
+	Upsert          bool     `json:"upsert"`
+	Mock            bool     `json:"mock"`
+	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseHygiene runs Stage 1: CloudOps Operational Hygiene Sense.
 func ExecuteSenseHygiene(ctx context.Context, in SenseHygieneInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/cloudops_raw.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/cloudops_raw.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Service == "" {
@@ -68,17 +74,32 @@ func ExecuteSenseHygiene(ctx context.Context, in SenseHygieneInput) (*types.Stag
 		records = filtered
 	}
 
+	targetPath := types.AppendTimestampToPath(in.OutputPath)
+
 	if in.OutputPath != "" {
-		if err := engine.WriteCloudOpsParquet(ctx, records, in.OutputPath); err != nil {
+		// Always write timestamped immutable parquet snapshot
+		if err := engine.WriteCloudOpsParquet(ctx, records, targetPath); err != nil {
 			return nil, fmt.Errorf("failed writing raw cloudops parquet: %w", err)
 		}
+
+		// Option to append/upsert to the original --output
+		if in.AppendOutput || in.Upsert {
+			if err := engine.UpsertCloudOpsParquet(ctx, records, in.OutputPath); err != nil {
+				return nil, fmt.Errorf("failed appending/upserting raw cloudops parquet: %w", err)
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("Sensed %d operational hygiene records into %s", len(records), targetPath)
+	if in.AppendOutput || in.Upsert {
+		msg = fmt.Sprintf("Sensed %d operational hygiene records into %s (and appended to %s)", len(records), targetPath, in.OutputPath)
 	}
 
 	return &types.StageResult{
 		Stage:       types.StageCloudOpsSenseHygiene,
 		Success:     true,
 		RecordCount: len(records),
-		OutputPath:  in.OutputPath,
-		Message:     fmt.Sprintf("Sensed %d operational hygiene records into %s", len(records), in.OutputPath),
+		OutputPath:  targetPath,
+		Message:     msg,
 	}, nil
 }

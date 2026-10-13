@@ -211,3 +211,33 @@ tasks:
       - ./{{.BINARY}} report powerbi --output {{.DATA_DIR}}/powerbi_dataset.parquet
       - ./{{.BINARY}} report excel --output {{.DATA_DIR}}/excel_dataset.csv
       - ./{{.BINARY}} report executive
+
+  # --- Taxonomy Management Tasks ---
+  taxonomy:list:
+    desc: List discovered multi-tenant taxonomies and default taxonomy files
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} taxonomy list
+
+  taxonomy:validate:
+    desc: Validate cost hierarchy taxonomies
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}} taxonomy validate
+
+  # --- Directus Headless CMS Tasks ---
+  directus:up:
+    desc: Start Directus Docker container for visual taxonomy editing
+    cmds:
+      - docker compose -f directus/docker-compose.yml up -d
+
+  directus:down:
+    desc: Stop Directus Docker container
+    cmds:
+      - docker compose -f directus/docker-compose.yml down
+
+  directus:logs:
+    desc: View Directus Docker container logs
+    cmds:
+      - docker compose -f directus/docker-compose.yml logs -f
+

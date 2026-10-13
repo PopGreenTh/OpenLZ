@@ -44,6 +44,17 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - `MONTHLY`: `DailyAmount = Amount / DaysInPeriod` (`DaysInPeriod` is the number of days in the month, or elapsed days for partial active months).
 - Both raw `Amount` and comparable `DailyAmount` must be persisted in DuckDB Parquet.
 
+### 5. Multi-Tenancy by File Name Separation
+- Partitions datasets and taxonomies via suffix filename separation:
+  - `taxonomy/project_taxonomy_<tenant>.json` / `taxonomy/business_taxonomy_<tenant>.json`
+  - `data/finops_raw_<tenant>.parquet`, `data/secops_raw_<tenant>.parquet`, etc.
+- **Shared Identity Invariants ("must behave")**:
+  - `ProjectID/Name` must match `BusinessUnitID/Name`
+  - `AppID/Name` must match `OwnerID/Name`
+  - `EnvironmentID/Name` must match `CostCenterID/Name`
+- When `--tenant` is omitted, retain default paths (`taxonomy/project_taxonomy.json`, `data/finops_raw.parquet`) for backward compatibility.
+- Visual taxonomy editing supported via Directus (`directus/docker-compose.yml`, `task directus:up`).
+
 ---
 
 ## 3. Directory Layout & Key Packages
@@ -58,9 +69,18 @@ OpenLZ/
 │   ├── cloudops.go         # openlz cloudops subcommands
 │   ├── stages.go           # Granular stage-level commands (finops-sense-costexplorer, etc.)
 │   ├── report.go           # Multi-format report generators & HTTP REST server
+│   ├── taxonomy.go         # openlz taxonomy subcommands (list, validate, init)
 │   ├── openlz-finops/      # Standalone FinOps binary entrypoint (main.go)
 │   ├── openlz-secops/      # Standalone SecOps binary entrypoint (main.go)
 │   └── openlz-cloudops/    # Standalone CloudOps binary entrypoint (main.go)
+├── directus/               # Directus Headless CMS (Docker Compose, PostgreSQL backend)
+│   ├── docker-compose.yml  # Directus container specification
+│   └── README.md           # Visual taxonomy editing instructions
+├── taxonomy/               # Project and Business cost hierarchy JSON files
+│   ├── project_taxonomy.json
+│   ├── business_taxonomy.json
+│   ├── project_taxonomy_<tenant>.json
+│   └── business_taxonomy_<tenant>.json
 ├── internal/
 │   ├── aws/
 │   │   ├── client.go       # Lean AWS SDK client & retries
@@ -77,6 +97,7 @@ OpenLZ/
 │   │   ├── finops/         # sense_costexplorer.go, sense_costanomaly.go, analyze, etc.
 │   │   ├── secops/         # sense_vulner.go, sense_posture.go, etc.
 │   │   └── cloudops/       # sense_hygiene.go, etc.
+│   ├── taxonomy/           # Cost hierarchy loader, validation & multi-tenant path resolver
 │   └── workflow/           # Multi-account concurrent scanner (errgroup)
 ├── ARCHITECTURE.md         # Full technical architecture specification
 ├── Taskfile.yml            # Task runner workflow definitions

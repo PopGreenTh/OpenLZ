@@ -10,6 +10,7 @@ import (
 	"github.com/PopGreenTh/OpenLZ/internal/report"
 	"github.com/PopGreenTh/OpenLZ/internal/rest"
 	cloudopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/cloudops"
+	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,10 @@ var (
 	cloudopsMock       bool
 	cloudopsFormat     string
 	cloudopsReportOut  string
+	cloudopsAppendTS     bool
+	cloudopsAppendOutput bool
+	cloudopsUpsert       bool
+	cloudopsTenant       string
 )
 
 var cloudopsCmd = &cobra.Command{
@@ -37,15 +42,28 @@ var cloudopsSenseCmd = &cobra.Command{
 	Short: "Stage 1: Scan AWS operational hygiene concurrently into DuckDB raw.parquet",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		tenant := cloudopsTenant
+		if tenant == "" {
+			tenant = rootTenant
+		}
+		rawPath := cloudopsRawPath
+		if !cmd.Flags().Changed("output") {
+			rawPath = types.AppendTenantToPath(rawPath, tenant)
+		}
+
 		var accounts []string
 		if cloudopsAccounts != "" {
 			accounts = strings.Split(cloudopsAccounts, ",")
 		}
 		res, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
-			Accounts:   accounts,
-			Service:    cloudopsService,
-			OutputPath: cloudopsRawPath,
-			Mock:       cloudopsMock,
+			Accounts:        accounts,
+			Service:         cloudopsService,
+			OutputPath:      rawPath,
+			AppendTimestamp: cloudopsAppendTS,
+			AppendOutput:    cloudopsAppendOutput || cloudopsUpsert,
+			Upsert:          cloudopsAppendOutput || cloudopsUpsert,
+			Mock:            cloudopsMock,
+			Tenant:          tenant,
 		})
 		if err != nil {
 			return err
@@ -60,9 +78,23 @@ var cloudopsAnalyzeCmd = &cobra.Command{
 	Short: "Stage 2: Run DuckDB OLAP queries to calculate operational waste and stale assets",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		tenant := cloudopsTenant
+		if tenant == "" {
+			tenant = rootTenant
+		}
+		rawPath := cloudopsRawPath
+		if !cmd.Flags().Changed("input") {
+			rawPath = types.AppendTenantToPath(rawPath, tenant)
+		}
+		anomPath := cloudopsAnomPath
+		if !cmd.Flags().Changed("output") {
+			anomPath = types.AppendTenantToPath(anomPath, tenant)
+		}
+
 		res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
-			InputPath:  cloudopsRawPath,
-			OutputPath: cloudopsAnomPath,
+			InputPath:  rawPath,
+			OutputPath: anomPath,
+			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -77,9 +109,23 @@ var cloudopsEnrichCmd = &cobra.Command{
 	Short: "Stage 3: Annotate waste findings with environment and lifecycle metadata",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		tenant := cloudopsTenant
+		if tenant == "" {
+			tenant = rootTenant
+		}
+		anomPath := cloudopsAnomPath
+		if !cmd.Flags().Changed("input") {
+			anomPath = types.AppendTenantToPath(anomPath, tenant)
+		}
+		enrichPath := cloudopsEnrichPath
+		if !cmd.Flags().Changed("output") {
+			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
+		}
+
 		res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
-			InputPath:  cloudopsAnomPath,
-			OutputPath: cloudopsEnrichPath,
+			InputPath:  anomPath,
+			OutputPath: enrichPath,
+			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -94,10 +140,24 @@ var cloudopsEnforceCmd = &cobra.Command{
 	Short: "Stage 4: Execute cleanup and asset remediation policies",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		tenant := cloudopsTenant
+		if tenant == "" {
+			tenant = rootTenant
+		}
+		enrichPath := cloudopsEnrichPath
+		if !cmd.Flags().Changed("input") {
+			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
+		}
+		auditPath := cloudopsAuditPath
+		if !cmd.Flags().Changed("output") {
+			auditPath = types.AppendTenantToPath(auditPath, tenant)
+		}
+
 		res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
-			InputPath:  cloudopsEnrichPath,
-			OutputPath: cloudopsAuditPath,
+			InputPath:  enrichPath,
+			OutputPath: auditPath,
 			DryRun:     cloudopsDryRun,
+			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -112,42 +172,69 @@ var cloudopsReportCmd = &cobra.Command{
 	Short: "Stage 5: Generate CloudOps reports (table, markdown, powerbi, excel, serve)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		tenant := cloudopsTenant
+		if tenant == "" {
+			tenant = rootTenant
+		}
+		enrichPath := cloudopsEnrichPath
+		if !cmd.Flags().Changed("input") {
+			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
+		}
+
 		engine, err := duckdb.NewEngine()
 		if err != nil {
 			return err
 		}
 		defer engine.Close()
 
-		records, err := engine.ReadEnrichedFromParquet(ctx, cloudopsEnrichPath)
+		records, err := engine.ReadEnrichedFromParquet(ctx, enrichPath)
 		if err != nil {
-			return fmt.Errorf("could not read enriched dataset from %s: %w", cloudopsEnrichPath, err)
+			return fmt.Errorf("could not read enriched dataset from %s: %w", enrichPath, err)
 		}
 
 		switch strings.ToLower(cloudopsFormat) {
 		case "markdown", "md":
+			targetMD := cloudopsReportOut
+			if targetMD == "" {
+				targetMD = "cloudops_report.md"
+			}
+			if cloudopsAppendTS {
+				targetMD = types.AppendTimestampToPath(targetMD)
+			}
 			md := report.RenderMarkdown(records, "CloudOps")
-			if cloudopsReportOut != "" {
-				_ = os.WriteFile(cloudopsReportOut, []byte(md), 0644)
-				fmt.Printf("[CloudOps:Report] Markdown report written to %s\n", cloudopsReportOut)
+			if cloudopsReportOut != "" || cloudopsAppendTS {
+				_ = os.WriteFile(targetMD, []byte(md), 0644)
+				fmt.Printf("[CloudOps:Report] Markdown report written to %s\n", targetMD)
 			} else {
 				fmt.Println(md)
 			}
 		case "powerbi":
-			mOut := "cloudops_report.m"
 			pOut := "cloudops_report.parquet"
 			if cloudopsReportOut != "" {
 				pOut = cloudopsReportOut
-				mOut = cloudopsReportOut + ".m"
+			}
+			if cloudopsAppendTS && !cloudopsUpsert {
+				pOut = types.AppendTimestampToPath(pOut)
+			}
+			mOut := strings.TrimSuffix(pOut, ".parquet") + ".m"
+			if cloudopsAppendTS && cloudopsUpsert {
+				mOut = types.AppendTimestampToPath(mOut)
+			}
+			if cloudopsUpsert {
+				if err := engine.UpsertEnrichedParquet(ctx, records, pOut); err != nil {
+					return err
+				}
 			}
 			return report.ExportPowerBI(ctx, records, pOut, mOut, engine)
-		case "excel":
+		case "excel", "csv":
 			cOut := "cloudops_report.csv"
-			mOut := "cloudops_report_excel.m"
 			if cloudopsReportOut != "" {
 				cOut = cloudopsReportOut
-				mOut = cloudopsReportOut + ".m"
 			}
-			return report.ExportExcel(ctx, records, cOut, mOut, engine)
+			if cloudopsAppendTS {
+				cOut = types.AppendTimestampToPath(cOut)
+			}
+			return report.ExportExcel(ctx, records, cOut, "", engine, report.DefaultCloudOpsSheet)
 		case "serve", "http", "rest":
 			srv := rest.NewServer(8080, engine, "", "", cloudopsEnrichPath)
 			return srv.Start(ctx)
@@ -159,10 +246,15 @@ var cloudopsReportCmd = &cobra.Command{
 }
 
 func init() {
+	cloudopsCmd.PersistentFlags().StringVar(&cloudopsTenant, "tenant", "", "Tenant ID or name for multi-tenant isolation")
+
 	// Flags for sense
 	cloudopsSenseCmd.Flags().StringVar(&cloudopsAccounts, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")
 	cloudopsSenseCmd.Flags().StringVar(&cloudopsService, "service", "all", "Service filter (e.g. ec2, eip, snapshot, all)")
 	cloudopsSenseCmd.Flags().StringVar(&cloudopsRawPath, "output", "data/cloudops_raw.parquet", "Output raw parquet file path")
+	cloudopsSenseCmd.Flags().BoolVarP(&cloudopsAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cloudopsSenseCmd.Flags().BoolVarP(&cloudopsAppendOutput, "append-output", "a", false, "Append/merge records into original un-timestamped output file (--output) in addition to timestamped file")
+	cloudopsSenseCmd.Flags().BoolVarP(&cloudopsUpsert, "upsert", "u", false, "Alias for --append-output: upsert/merge records into original output file")
 	cloudopsSenseCmd.Flags().BoolVar(&cloudopsMock, "mock", true, "Use mock/offline cloud data")
 
 	// Flags for analyze
@@ -180,8 +272,10 @@ func init() {
 
 	// Flags for report
 	cloudopsReportCmd.Flags().StringVar(&cloudopsEnrichPath, "input", "data/cloudops_enriched.parquet", "Input enriched parquet file path")
-	cloudopsReportCmd.Flags().StringVar(&cloudopsFormat, "format", "table", "Report format (table, markdown, powerbi, excel, serve)")
+	cloudopsReportCmd.Flags().StringVar(&cloudopsFormat, "format", "table", "Report format (table, markdown, powerbi, excel, csv, serve)")
 	cloudopsReportCmd.Flags().StringVar(&cloudopsReportOut, "output", "", "Output file path (for markdown, powerbi parquet, or excel csv)")
+	cloudopsReportCmd.Flags().BoolVarP(&cloudopsAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	cloudopsReportCmd.Flags().BoolVarP(&cloudopsUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 
 	cloudopsCmd.AddCommand(cloudopsSenseCmd)
 	cloudopsCmd.AddCommand(cloudopsAnalyzeCmd)

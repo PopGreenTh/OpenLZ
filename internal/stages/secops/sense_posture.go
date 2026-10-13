@@ -14,16 +14,22 @@ import (
 
 // SensePostureInput models inputs for secops-sense-posture.
 type SensePostureInput struct {
-	Accounts   []string `json:"accounts"`
-	Service    string   `json:"service"`
-	OutputPath string   `json:"outputPath"`
-	Mock       bool     `json:"mock"`
+	Accounts        []string `json:"accounts"`
+	Service         string   `json:"service"`
+	Format          string   `json:"format"`
+	OutputPath      string   `json:"outputPath"`
+	AppendTimestamp bool     `json:"appendTimestamp"`
+	AppendOutput    bool     `json:"appendOutput"`
+	Upsert          bool     `json:"upsert"`
+	Mock            bool     `json:"mock"`
+	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSensePosture runs Stage 1a: SecOps Posture Findings Sense.
 func ExecuteSensePosture(ctx context.Context, in SensePostureInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/secops_raw.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/secops_raw.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Service == "" {
@@ -68,17 +74,32 @@ func ExecuteSensePosture(ctx context.Context, in SensePostureInput) (*types.Stag
 		records = filtered
 	}
 
+	targetPath := types.AppendTimestampToPath(in.OutputPath)
+
 	if in.OutputPath != "" {
-		if err := engine.WriteSecOpsParquet(ctx, records, in.OutputPath); err != nil {
+		// Always write timestamped immutable parquet snapshot
+		if err := engine.WriteSecOpsParquet(ctx, records, targetPath); err != nil {
 			return nil, fmt.Errorf("failed writing raw secops parquet: %w", err)
 		}
+
+		// Option to append/upsert to the original --output
+		if in.AppendOutput || in.Upsert {
+			if err := engine.UpsertSecOpsParquet(ctx, records, in.OutputPath); err != nil {
+				return nil, fmt.Errorf("failed appending/upserting raw secops parquet: %w", err)
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("Sensed %d security posture findings into %s", len(records), targetPath)
+	if in.AppendOutput || in.Upsert {
+		msg = fmt.Sprintf("Sensed %d security posture findings into %s (and appended to %s)", len(records), targetPath, in.OutputPath)
 	}
 
 	return &types.StageResult{
 		Stage:       types.StageSecOpsSensePosture,
 		Success:     true,
 		RecordCount: len(records),
-		OutputPath:  in.OutputPath,
-		Message:     fmt.Sprintf("Sensed %d security posture findings into %s", len(records), in.OutputPath),
+		OutputPath:  targetPath,
+		Message:     msg,
 	}, nil
 }

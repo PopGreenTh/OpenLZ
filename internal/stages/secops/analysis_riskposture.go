@@ -3,6 +3,7 @@ package secops
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
 	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
@@ -12,16 +13,18 @@ import (
 type AnalysisRiskPostureInput struct {
 	InputPath  string `json:"inputPath"`
 	OutputPath string `json:"outputPath"`
+	Tenant     string `json:"tenant"`
 }
 
 // ExecuteAnalysisRiskPosture runs Stage 2: Security Risk Analysis.
 func ExecuteAnalysisRiskPosture(ctx context.Context, in AnalysisRiskPostureInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = "data/secops_raw.parquet"
+		in.InputPath = types.AppendTenantToPath("data/secops_raw.parquet", in.Tenant)
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/secops_anomalies.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/secops_anomalies.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 

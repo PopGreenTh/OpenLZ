@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/PopGreenTh/OpenLZ/internal/stages"
@@ -25,16 +26,20 @@ func TestDedicatedStages_FinOps(t *testing.T) {
 
 	// 1a. finops-sense-costexplorer
 	resCE, err := finopsstages.ExecuteSenseCostExplorer(ctx, finopsstages.SenseCostExplorerInput{
-		Accounts:    []string{"111122223333"},
-		OutputPath:  rawPath,
-		CacheDBPath: filepath.Join(tempDir, "cache.duckdb"),
-		Mock:        true,
+		Accounts:     []string{"111122223333"},
+		OutputPath:   rawPath,
+		AppendOutput: true,
+		CacheDBPath:  filepath.Join(tempDir, "cache.duckdb"),
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseCostExplorer failed: %v", err)
 	}
 	if resCE.RecordCount == 0 || !resCE.Success {
 		t.Errorf("expected positive record count, got %d", resCE.RecordCount)
+	}
+	if !strings.Contains(resCE.OutputPath, "_") {
+		t.Errorf("expected timestamped output path, got %s", resCE.OutputPath)
 	}
 
 	// 1b. finops-sense-costanomaly
@@ -113,15 +118,19 @@ func TestDedicatedStages_SecOps(t *testing.T) {
 
 	// 1a. secops-sense-posture
 	resPosture, err := secopsstages.ExecuteSensePosture(ctx, secopsstages.SensePostureInput{
-		Accounts:   []string{"111122223333"},
-		OutputPath: rawPath,
-		Mock:       true,
+		Accounts:     []string{"111122223333"},
+		OutputPath:   rawPath,
+		AppendOutput: true,
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSensePosture failed: %v", err)
 	}
 	if resPosture.RecordCount == 0 || !resPosture.Success {
 		t.Errorf("expected positive posture findings count, got %d", resPosture.RecordCount)
+	}
+	if !strings.Contains(resPosture.OutputPath, "_") {
+		t.Errorf("expected timestamped output path, got %s", resPosture.OutputPath)
 	}
 
 	// 1b. secops-sense-vulner
@@ -198,15 +207,19 @@ func TestDedicatedStages_CloudOps(t *testing.T) {
 
 	// 1. cloudops-sense-hygiene
 	resSense, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
-		Accounts:   []string{"111122223333"},
-		OutputPath: rawPath,
-		Mock:       true,
+		Accounts:     []string{"111122223333"},
+		OutputPath:   rawPath,
+		AppendOutput: true,
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseHygiene failed: %v", err)
 	}
 	if resSense.RecordCount == 0 || !resSense.Success {
 		t.Errorf("expected positive hygiene count, got %d", resSense.RecordCount)
+	}
+	if !strings.Contains(resSense.OutputPath, "_") {
+		t.Errorf("expected timestamped output path, got %s", resSense.OutputPath)
 	}
 
 	// 2. cloudops-analysis-wastehygiene

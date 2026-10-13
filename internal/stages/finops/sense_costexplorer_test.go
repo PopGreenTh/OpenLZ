@@ -19,13 +19,14 @@ func TestSenseCostExplorer_WithTags(t *testing.T) {
 	cachePath := filepath.Join(tempDir, "cache.duckdb")
 
 	res, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
-		Accounts:    []string{"111122223333"},
-		StartDate:   "2026-09-01",
-		EndDate:     "2026-09-07",
-		GroupByTags: []string{"BusinessUnit", "Project", "Application", "Environment"},
-		OutputPath:  rawPath,
-		CacheDBPath: cachePath,
-		Mock:        true,
+		Accounts:     []string{"111122223333"},
+		StartDate:    "2026-09-01",
+		EndDate:      "2026-09-07",
+		GroupByTags:  []string{"BusinessUnit", "Project", "Application", "Environment"},
+		OutputPath:   rawPath,
+		AppendOutput: true,
+		CacheDBPath:  cachePath,
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseCostExplorer failed: %v", err)
@@ -104,6 +105,7 @@ func TestSenseCostExplorer_MinCostThreshold(t *testing.T) {
 		EndDate:          "2026-09-07",
 		MinCostThreshold: 50.0,
 		OutputPath:       rawPath,
+		AppendOutput:     true,
 		CacheDBPath:      cachePath,
 		Mock:             true,
 	})
@@ -135,14 +137,15 @@ func TestSenseCostExplorer_UsageQuantity(t *testing.T) {
 	cachePath := filepath.Join(tempDir, "cache_usage.duckdb")
 
 	res, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
-		Accounts:    []string{"111122223333"},
-		StartDate:   "2026-09-01",
-		EndDate:     "2026-09-07",
-		Metric:      "UsageQuantity",
-		Frequency:   "DAILY",
-		OutputPath:  rawPath,
-		CacheDBPath: cachePath,
-		Mock:        true,
+		Accounts:     []string{"111122223333"},
+		StartDate:    "2026-09-01",
+		EndDate:      "2026-09-07",
+		Metric:       "UsageQuantity",
+		Frequency:    "DAILY",
+		OutputPath:   rawPath,
+		AppendOutput: true,
+		CacheDBPath:  cachePath,
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseCostExplorer with UsageQuantity failed: %v", err)
@@ -209,13 +212,14 @@ func TestSenseCostExplorer_FrequencyComparability(t *testing.T) {
 		p := filepath.Join(tempDir, "finops_"+freq+".parquet")
 		paths[freq] = p
 		res, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
-			Accounts:    []string{"111122223333"},
-			StartDate:   "2026-09-01",
-			EndDate:     "2026-09-07",
-			Frequency:   freq,
-			OutputPath:  p,
-			CacheDBPath: filepath.Join(tempDir, "cache_"+freq+".duckdb"),
-			Mock:        true,
+			Accounts:     []string{"111122223333"},
+			StartDate:    "2026-09-01",
+			EndDate:      "2026-09-07",
+			Frequency:    freq,
+			OutputPath:   p,
+			AppendOutput: true,
+			CacheDBPath:  filepath.Join(tempDir, "cache_"+freq+".duckdb"),
+			Mock:         true,
 		})
 		if err != nil {
 			t.Fatalf("failed executing for frequency %s: %v", freq, err)
@@ -325,6 +329,7 @@ func TestSenseCostExplorer_MixedDimensions(t *testing.T) {
 		PayerAccount: "225989366329",
 		GroupBy:      "LINKED_ACCOUNT_SERVICE",
 		OutputPath:   rawPath,
+		AppendOutput: true,
 		CacheDBPath:  cachePath,
 		Mock:         true,
 	})
@@ -379,6 +384,7 @@ func TestSenseCostExplorer_Hierarchical(t *testing.T) {
 		SecondaryTag:     "Application",
 		MinCostThreshold: 0.50,
 		OutputPath:       rawPath,
+		AppendOutput:     true,
 		CacheDBPath:      cachePath,
 		Mock:             true,
 	})
@@ -462,11 +468,12 @@ func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
 	outBase := filepath.Join(tempDir, "finops_test_raw.parquet")
 
 	res, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
-		Accounts:    []string{"111122223333"},
-		Format:      "all",
-		OutputPath:  outBase,
-		CacheDBPath: filepath.Join(tempDir, "cache.duckdb"),
-		Mock:        true,
+		Accounts:     []string{"111122223333"},
+		Format:       "all",
+		OutputPath:   outBase,
+		AppendOutput: true,
+		CacheDBPath:  filepath.Join(tempDir, "cache.duckdb"),
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseCostExplorer with format=all failed: %v", err)
@@ -476,41 +483,58 @@ func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
 	}
 
 	parquetFile := filepath.Join(tempDir, "finops_test_raw.parquet")
-	csvFile := filepath.Join(tempDir, "finops_test_raw.csv")
-	excelMFile := filepath.Join(tempDir, "finops_test_raw_excel.m")
-	powerbiMFile := filepath.Join(tempDir, "finops_test_raw_powerbi.m")
-
 	if _, err := os.Stat(parquetFile); os.IsNotExist(err) {
-		t.Errorf("expected parquet file %s to exist", parquetFile)
-	}
-	if _, err := os.Stat(csvFile); os.IsNotExist(err) {
-		t.Errorf("expected csv file %s to exist", csvFile)
-	}
-	if _, err := os.Stat(excelMFile); os.IsNotExist(err) {
-		t.Errorf("expected excel .m file %s to exist", excelMFile)
-	}
-	if _, err := os.Stat(powerbiMFile); os.IsNotExist(err) {
-		t.Errorf("expected powerbi .m file %s to exist", powerbiMFile)
+		t.Errorf("expected parquet file %s to exist from AppendOutput", parquetFile)
 	}
 
-	// Verify CSV contents have header
-	csvBytes, err := os.ReadFile(csvFile)
+	files, err := os.ReadDir(tempDir)
 	if err != nil {
-		t.Fatalf("failed reading csv: %v", err)
+		t.Fatalf("failed reading tempDir: %v", err)
 	}
-	csvContent := string(csvBytes)
-	if !strings.Contains(csvContent, "account_id") || !strings.Contains(csvContent, "recorded_at") {
-		t.Errorf("csv missing expected column headers: %s", csvContent[:min(100, len(csvContent))])
+
+	var foundCSV, foundExcelM, foundPowerBIM string
+	for _, f := range files {
+		name := f.Name()
+		if strings.HasPrefix(name, "finops_test_raw_") {
+			if strings.HasSuffix(name, ".csv") {
+				foundCSV = filepath.Join(tempDir, name)
+			} else if strings.HasSuffix(name, "_excel.m") {
+				foundExcelM = filepath.Join(tempDir, name)
+			} else if strings.HasSuffix(name, "_powerbi.m") {
+				foundPowerBIM = filepath.Join(tempDir, name)
+			}
+		}
+	}
+
+	if foundCSV == "" {
+		t.Errorf("expected timestamped csv file to exist")
+	} else {
+		// Verify CSV contents have header
+		csvBytes, err := os.ReadFile(foundCSV)
+		if err != nil {
+			t.Fatalf("failed reading csv: %v", err)
+		}
+		csvContent := string(csvBytes)
+		if !strings.Contains(csvContent, "account_id") || !strings.Contains(csvContent, "recorded_at") {
+			t.Errorf("csv missing expected column headers: %s", csvContent[:min(100, len(csvContent))])
+		}
+	}
+	if foundExcelM == "" {
+		t.Errorf("expected timestamped excel .m file to exist")
+	}
+	if foundPowerBIM == "" {
+		t.Errorf("expected timestamped powerbi .m file to exist")
 	}
 
 	// Also test bare path without extension + "excel,par" aliases
 	bareBase := filepath.Join(tempDir, "finops_bare")
 	resBare, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
-		Accounts:    []string{"111122223333"},
-		Format:      "excel,par",
-		OutputPath:  bareBase, // Notice: No extension specified!
-		CacheDBPath: filepath.Join(tempDir, "cache2.duckdb"),
-		Mock:        true,
+		Accounts:     []string{"111122223333"},
+		Format:       "excel,par",
+		OutputPath:   bareBase, // Notice: No extension specified!
+		AppendOutput: true,
+		CacheDBPath:  filepath.Join(tempDir, "cache2.duckdb"),
+		Mock:         true,
 	})
 	if err != nil {
 		t.Fatalf("ExecuteSenseCostExplorer with bare path failed: %v", err)
@@ -519,18 +543,197 @@ func TestExecuteSenseCostExplorer_MultiFormatOutput(t *testing.T) {
 		t.Fatalf("expected positive record count for bare path, got %d", resBare.RecordCount)
 	}
 
-	// Verify all expected extensions are automatically appended to bare path
+	// Verify all expected extensions are created
 	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.parquet")); os.IsNotExist(err) {
-		t.Errorf("expected finops_bare.parquet to be created automatically")
+		t.Errorf("expected finops_bare.parquet to be created from AppendOutput")
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.csv")); os.IsNotExist(err) {
-		t.Errorf("expected finops_bare.csv to be created automatically")
+
+	filesBare, _ := os.ReadDir(tempDir)
+	var foundBareCSV, foundBareXLSX, foundBareM bool
+	for _, f := range filesBare {
+		name := f.Name()
+		if strings.HasPrefix(name, "finops_bare_") {
+			if strings.HasSuffix(name, ".csv") {
+				foundBareCSV = true
+			} else if strings.HasSuffix(name, ".xlsx") {
+				foundBareXLSX = true
+			} else if strings.HasSuffix(name, "_excel.m") {
+				foundBareM = true
+			}
+		}
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare.xlsx")); os.IsNotExist(err) {
-		t.Errorf("expected finops_bare.xlsx to be created automatically")
+	if !foundBareCSV {
+		t.Errorf("expected timestamped finops_bare csv to be created")
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, "finops_bare_excel.m")); os.IsNotExist(err) {
-		t.Errorf("expected finops_bare_excel.m to be created automatically")
+	if !foundBareXLSX {
+		t.Errorf("expected timestamped finops_bare xlsx to be created")
+	}
+	if !foundBareM {
+		t.Errorf("expected timestamped finops_bare excel.m to be created")
+	}
+}
+
+func TestSenseCostExplorer_AppendTimestampAndUpsert(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	basePath := filepath.Join(tempDir, "finops_export")
+	cachePath := filepath.Join(tempDir, "cache_ts.duckdb")
+
+	// 1. First run: AppendTimestamp = true, Upsert = false
+	res1, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:        []string{"111122223333"},
+		Format:          "all",
+		OutputPath:      basePath,
+		AppendTimestamp: true,
+		Upsert:          false,
+		CacheDBPath:     cachePath,
+		Mock:            true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSenseCostExplorer with timestamp failed: %v", err)
+	}
+	if !res1.Success || res1.RecordCount == 0 {
+		t.Fatalf("expected positive record count, got %d", res1.RecordCount)
+	}
+
+	// Verify files with timestamps were created
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatalf("failed reading tempDir: %v", err)
+	}
+
+	var foundParquet, foundCSV, foundExcel, foundM bool
+	for _, f := range files {
+		name := f.Name()
+		if strings.HasPrefix(name, "finops_export_") {
+			if strings.HasSuffix(name, ".parquet") {
+				foundParquet = true
+			} else if strings.HasSuffix(name, ".csv") {
+				foundCSV = true
+			} else if strings.HasSuffix(name, ".xlsx") {
+				foundExcel = true
+			} else if strings.HasSuffix(name, "_excel.m") {
+				foundM = true
+			}
+		}
+	}
+
+	if !foundParquet {
+		t.Errorf("expected timestamped .parquet file")
+	}
+	if !foundCSV {
+		t.Errorf("expected timestamped .csv file")
+	}
+	if !foundExcel {
+		t.Errorf("expected timestamped .xlsx file")
+	}
+	if !foundM {
+		t.Errorf("expected timestamped _excel.m file")
+	}
+
+	// 2. Second run: AppendTimestamp = true, Upsert = true
+	// When Upsert is true, Parquet targets basePath.parquet (persistent file) while companion exports are timestamped
+	res2, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:        []string{"444455556666"},
+		Format:          "all",
+		OutputPath:      basePath,
+		AppendTimestamp: true,
+		Upsert:          true,
+		CacheDBPath:     cachePath,
+		Mock:            true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteSenseCostExplorer with upsert failed: %v", err)
+	}
+	if !res2.Success {
+		t.Fatalf("expected success on upsert run")
+	}
+
+	// Verify that persistent non-timestamped parquet file exists and was upserted
+	persistentParquet := basePath + ".parquet"
+	if _, err := os.Stat(persistentParquet); os.IsNotExist(err) {
+		t.Errorf("expected persistent parquet file %s to exist for upsert", persistentParquet)
+	}
+}
+
+func TestSenseCostExplorer_AlwaysTimestampAndAppendOutput(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	basePath := filepath.Join(tempDir, "finops_daily_test")
+	originalParquet := basePath + ".parquet"
+	cachePath := filepath.Join(tempDir, "cache_append.duckdb")
+
+	// 1. First run without AppendOutput (default): must write timestamped snapshot, must NOT write originalParquet
+	res1, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:     []string{"111122223333"},
+		OutputPath:   basePath,
+		AppendOutput: false,
+		CacheDBPath:  cachePath,
+		Mock:         true,
+	})
+	if err != nil {
+		t.Fatalf("first run failed: %v", err)
+	}
+	if !res1.Success || res1.RecordCount == 0 {
+		t.Fatalf("expected positive records on first run")
+	}
+
+	// Original un-timestamped file must NOT exist
+	if _, err := os.Stat(originalParquet); !os.IsNotExist(err) {
+		t.Errorf("original parquet %s should not exist when AppendOutput is false", originalParquet)
+	}
+
+	// Verify timestamped file exists
+	files, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatalf("failed reading dir: %v", err)
+	}
+	foundTS1 := false
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), "finops_daily_test_") && strings.HasSuffix(f.Name(), ".parquet") {
+			foundTS1 = true
+			break
+		}
+	}
+	if !foundTS1 {
+		t.Fatalf("expected timestamped parquet snapshot on first run")
+	}
+
+	// 2. Second run with AppendOutput = true: must write new timestamped snapshot AND create/update originalParquet
+	res2, err := finops.ExecuteSenseCostExplorer(ctx, finops.SenseCostExplorerInput{
+		Accounts:     []string{"111122223333"},
+		OutputPath:   basePath,
+		AppendOutput: true,
+		CacheDBPath:  cachePath,
+		Mock:         true,
+	})
+	if err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+	if !res2.Success || res2.RecordCount == 0 {
+		t.Fatalf("expected positive records on second run")
+	}
+
+	// Original un-timestamped file MUST exist now
+	if _, err := os.Stat(originalParquet); os.IsNotExist(err) {
+		t.Errorf("original parquet %s should exist when AppendOutput is true", originalParquet)
+	}
+
+	// Verify records inside original parquet via DuckDB
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		t.Fatalf("failed opening duckdb: %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM read_parquet(?)", originalParquet).Scan(&count); err != nil {
+		t.Fatalf("failed querying original parquet: %v", err)
+	}
+	if count == 0 {
+		t.Errorf("expected records in %s, got 0", originalParquet)
 	}
 }
 
@@ -540,4 +743,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

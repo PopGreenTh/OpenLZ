@@ -3,6 +3,7 @@ package cloudops
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
 	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
@@ -12,16 +13,18 @@ import (
 type AnalysisWasteHygieneInput struct {
 	InputPath  string `json:"inputPath"`
 	OutputPath string `json:"outputPath"`
+	Tenant     string `json:"tenant"`
 }
 
 // ExecuteAnalysisWasteHygiene runs Stage 2: Waste & Idle Asset Analysis.
 func ExecuteAnalysisWasteHygiene(ctx context.Context, in AnalysisWasteHygieneInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = "data/cloudops_raw.parquet"
+		in.InputPath = types.AppendTenantToPath("data/cloudops_raw.parquet", in.Tenant)
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/cloudops_anomalies.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/cloudops_anomalies.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 

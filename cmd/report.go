@@ -10,15 +10,18 @@ import (
 	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
 	"github.com/PopGreenTh/OpenLZ/internal/report"
 	"github.com/PopGreenTh/OpenLZ/internal/rest"
+	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/spf13/cobra"
 )
 
 var (
-	repFormat string
-	repInput  string
-	repOutput string
-	repSheet  string
-	repPort   int
+	repFormat   string
+	repInput    string
+	repOutput   string
+	repSheet    string
+	repPort     int
+	repAppendTS bool
+	repUpsert   bool
 )
 
 var reportCmd = &cobra.Command{
@@ -97,7 +100,13 @@ var reportPowerBICmd = &cobra.Command{
 		if pOut == "" {
 			pOut = "powerbi_dataset.parquet"
 		}
+		if repAppendTS && !repUpsert {
+			pOut = types.AppendTimestampToPath(pOut)
+		}
 		mOut := strings.TrimSuffix(pOut, ".parquet") + ".m"
+		if repAppendTS && repUpsert {
+			mOut = types.AppendTimestampToPath(mOut)
+		}
 
 		var records []cloud.EnrichedRecord
 		if _, err := os.Stat(repInput); err == nil {
@@ -105,6 +114,12 @@ var reportPowerBICmd = &cobra.Command{
 		}
 		if len(records) == 0 {
 			records = generateSampleDataset()
+		}
+
+		if repUpsert {
+			if err := engine.UpsertEnrichedParquet(ctx, records, pOut); err != nil {
+				return err
+			}
 		}
 
 		return report.ExportPowerBI(ctx, records, pOut, mOut, engine)
@@ -125,6 +140,9 @@ var reportExcelCmd = &cobra.Command{
 		cOut := repOutput
 		if cOut == "" {
 			cOut = "excel_dataset.csv"
+		}
+		if repAppendTS {
+			cOut = types.AppendTimestampToPath(cOut)
 		}
 
 		var records []cloud.EnrichedRecord
@@ -177,10 +195,17 @@ func runOpsReport(displayName, opsName, inPath, outPath, format string) error {
 
 	switch strings.ToLower(format) {
 	case "markdown", "md":
+		targetMD := outPath
+		if targetMD == "" {
+			targetMD = fmt.Sprintf("%s_report.md", opsName)
+		}
+		if repAppendTS {
+			targetMD = types.AppendTimestampToPath(targetMD)
+		}
 		md := report.RenderMarkdown(records, displayName)
-		if outPath != "" {
-			_ = os.WriteFile(outPath, []byte(md), 0644)
-			fmt.Printf("[%s:Report] Markdown report saved to %s\n", displayName, outPath)
+		if outPath != "" || repAppendTS {
+			_ = os.WriteFile(targetMD, []byte(md), 0644)
+			fmt.Printf("[%s:Report] Markdown report saved to %s\n", displayName, targetMD)
 		} else {
 			fmt.Println(md)
 		}
@@ -189,11 +214,26 @@ func runOpsReport(displayName, opsName, inPath, outPath, format string) error {
 		if pOut == "" {
 			pOut = fmt.Sprintf("%s_report.parquet", opsName)
 		}
-		return report.ExportPowerBI(ctx, records, pOut, "", engine)
+		if repAppendTS && !repUpsert {
+			pOut = types.AppendTimestampToPath(pOut)
+		}
+		mOut := strings.TrimSuffix(pOut, ".parquet") + ".m"
+		if repAppendTS && repUpsert {
+			mOut = types.AppendTimestampToPath(mOut)
+		}
+		if repUpsert {
+			if err := engine.UpsertEnrichedParquet(ctx, records, pOut); err != nil {
+				return err
+			}
+		}
+		return report.ExportPowerBI(ctx, records, pOut, mOut, engine)
 	case "excel", "csv":
 		cOut := outPath
 		if cOut == "" {
 			cOut = fmt.Sprintf("%s_report.csv", opsName)
+		}
+		if repAppendTS {
+			cOut = types.AppendTimestampToPath(cOut)
 		}
 		sheetName := repSheet
 		if sheetName == "" {
@@ -283,6 +323,9 @@ func init() {
 	reportExcelCmd.Flags().StringVar(&repSheet, "sheet", "", "Excel worksheet name (default: Enriched_Findings)")
 
 	reportServeCmd.Flags().IntVarP(&repPort, "port", "p", 8080, "Port to serve live REST feed on")
+
+	reportCmd.PersistentFlags().BoolVarP(&repAppendTS, "append-timestamp", "t", false, "Append formatted datetime (_YYYYMMDD_HHMMSS) to output file names")
+	reportCmd.PersistentFlags().BoolVarP(&repUpsert, "upsert", "u", false, "Upsert new records into existing Parquet file instead of overwriting")
 
 	reportCmd.AddCommand(reportFinopsCmd)
 	reportCmd.AddCommand(reportSecopsCmd)

@@ -75,14 +75,7 @@ func cleanPath(path string) string {
 	return filepath.ToSlash(filepath.Clean(path))
 }
 
-
-// WriteFinOpsParquet ingests CostRecord slice and writes directly to Parquet with primary_tag and secondary_tag columns.
-func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRecord, outputPath string) error {
-	if err := ensureDir(outputPath); err != nil {
-		return err
-	}
-
-	// 1. Build CREATE TABLE DDL with exactly 17 normalized FinOps columns
+func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, records []cloud.CostRecord) error {
 	colDefs := []string{
 		"account_id VARCHAR",
 		"account_name VARCHAR",
@@ -103,104 +96,118 @@ func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRec
 		"recorded_at DATETIME",
 	}
 
-	_, _ = e.db.ExecContext(ctx, `DROP TABLE IF EXISTS raw_finops;`)
-	createTable := fmt.Sprintf("CREATE TABLE raw_finops (\n\t%s\n);", strings.Join(colDefs, ",\n\t"))
+	_, _ = e.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	createTable := fmt.Sprintf("CREATE TABLE %s (\n\t%s\n);", tableName, strings.Join(colDefs, ",\n\t"))
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
-		return fmt.Errorf("failed to create finops table: %w", err)
+		return fmt.Errorf("failed to create %s table: %w", tableName, err)
 	}
 
-	if len(records) > 0 {
-		slog.DebugContext(ctx, "Bulk appending FinOps records via DuckDB Appender", "recordCount", len(records))
-		appender, conn, err := e.newAppender(ctx, "", "raw_finops")
-		if err != nil {
-			return err
+	if len(records) == 0 {
+		return nil
+	}
+
+	slog.DebugContext(ctx, "Bulk appending FinOps records via DuckDB Appender", "table", tableName, "recordCount", len(records))
+	appender, conn, err := e.newAppender(ctx, "", tableName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer appender.Close()
+
+	now := time.Now()
+	for idx, r := range records {
+		ts := r.Timestamp
+		if ts.IsZero() {
+			ts = now
 		}
-		defer conn.Close()
-		defer appender.Close()
+		dailyAmount := r.DailyAmount
+		if dailyAmount == 0 && r.Amount != 0 {
+			dailyAmount = r.Amount
+		}
+		daysInPeriod := r.DaysInPeriod
+		if daysInPeriod == 0 {
+			daysInPeriod = 1.0
+		}
+		metric := r.Metric
+		if metric == "" {
+			metric = "UnblendedCost"
+		}
+		frequency := r.Frequency
+		if frequency == "" {
+			frequency = "DAILY"
+		}
+		usagePeriod := r.UsagePeriod
+		if usagePeriod == "" {
+			usagePeriod = r.UsageDate
+		}
 
-		now := time.Now()
-		for idx, r := range records {
-			ts := r.Timestamp
-			if ts.IsZero() {
-				ts = now
-			}
-			dailyAmount := r.DailyAmount
-			if dailyAmount == 0 && r.Amount != 0 {
-				dailyAmount = r.Amount
-			}
-			daysInPeriod := r.DaysInPeriod
-			if daysInPeriod == 0 {
-				daysInPeriod = 1.0
-			}
-			metric := r.Metric
-			if metric == "" {
-				metric = "UnblendedCost"
-			}
-			frequency := r.Frequency
-			if frequency == "" {
-				frequency = "DAILY"
-			}
-			usagePeriod := r.UsagePeriod
-			if usagePeriod == "" {
-				usagePeriod = r.UsageDate
-			}
-
-			// Resolve primary_tag and secondary_tag
-			primaryTag := r.PrimaryTag
-			if primaryTag == "" {
-				if r.Project != "" {
-					primaryTag = r.Project
-				} else if r.BusinessUnit != "" {
-					primaryTag = r.BusinessUnit
-				} else {
-					primaryTag = "Untagged"
-				}
-			}
-
-			secondaryTag := r.SecondaryTag
-			if secondaryTag == "" {
-				if r.Application != "" {
-					secondaryTag = r.Application
-				} else if r.Environment != "" {
-					secondaryTag = r.Environment
-				} else {
-					secondaryTag = "Untagged"
-				}
-			}
-
-			rowVals := []driver.Value{
-				r.AccountID,
-				r.AccountName,
-				r.Service,
-				r.UsageDate,
-				usagePeriod,
-				r.Amount,
-				dailyAmount,
-				daysInPeriod,
-				metric,
-				frequency,
-				r.Unit,
-				r.Currency,
-				r.Region,
-				r.UsageType,
-				primaryTag,
-				secondaryTag,
-				ts,
-			}
-
-			if err := appender.AppendRow(rowVals...); err != nil {
-				return fmt.Errorf("failed appending finops row: %w", err)
-			}
-
-			if (idx+1)%50000 == 0 {
-				slog.InfoContext(ctx, "DuckDB bulk append progress", "appended", idx+1, "total", len(records))
+		// Resolve primary_tag and secondary_tag
+		primaryTag := r.PrimaryTag
+		if primaryTag == "" {
+			if r.Project != "" {
+				primaryTag = r.Project
+			} else if r.BusinessUnit != "" {
+				primaryTag = r.BusinessUnit
+			} else {
+				primaryTag = "Untagged"
 			}
 		}
 
-		if err := appender.Flush(); err != nil {
-			return fmt.Errorf("failed flushing finops appender: %w", err)
+		secondaryTag := r.SecondaryTag
+		if secondaryTag == "" {
+			if r.Application != "" {
+				secondaryTag = r.Application
+			} else if r.Environment != "" {
+				secondaryTag = r.Environment
+			} else {
+				secondaryTag = "Untagged"
+			}
 		}
-		slog.DebugContext(ctx, "DuckDB appender flushed successfully", "recordCount", len(records))
+
+		rowVals := []driver.Value{
+			r.AccountID,
+			r.AccountName,
+			r.Service,
+			r.UsageDate,
+			usagePeriod,
+			r.Amount,
+			dailyAmount,
+			daysInPeriod,
+			metric,
+			frequency,
+			r.Unit,
+			r.Currency,
+			r.Region,
+			r.UsageType,
+			primaryTag,
+			secondaryTag,
+			ts,
+		}
+
+		if err := appender.AppendRow(rowVals...); err != nil {
+			return fmt.Errorf("failed appending finops row: %w", err)
+		}
+
+		if (idx+1)%50000 == 0 {
+			slog.InfoContext(ctx, "DuckDB bulk append progress", "appended", idx+1, "total", len(records))
+		}
+	}
+
+	if err := appender.Flush(); err != nil {
+		return fmt.Errorf("failed flushing finops appender: %w", err)
+	}
+	slog.DebugContext(ctx, "DuckDB appender flushed successfully", "table", tableName, "recordCount", len(records))
+	return nil
+}
+
+// WriteFinOpsParquet ingests CostRecord slice and writes directly to Parquet with primary_tag and secondary_tag columns.
+func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	if err := e.insertFinOpsRecords(ctx, "raw_finops", records); err != nil {
+		return fmt.Errorf("failed inserting finops records: %w", err)
 	}
 
 	copySQL := fmt.Sprintf("COPY raw_finops TO '%s' (FORMAT PARQUET);", cleanPath(outputPath))
@@ -212,15 +219,79 @@ func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRec
 	return nil
 }
 
-// WriteSecOpsParquet ingests SecurityRecord slice and writes directly to Parquet.
-func (e *Engine) WriteSecOpsParquet(ctx context.Context, records []cloud.SecurityRecord, outputPath string) error {
+// UpsertFinOpsParquet merges incoming CostRecords into an existing Parquet file.
+// If the destination parquet file does not exist, it writes a new one.
+// If it exists, records with identical business keys (account_id, service, usage_date, usage_period, metric, frequency, region, usage_type, primary_tag, secondary_tag)
+// are replaced with the latest record ordered by recorded_at DESC.
+func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRecord, outputPath string) error {
 	if err := ensureDir(outputPath); err != nil {
 		return err
 	}
 
-	_, _ = e.db.ExecContext(ctx, `DROP TABLE IF EXISTS raw_secops;`)
-	createTable := `
-	CREATE TABLE raw_secops (
+	cleanOutput := cleanPath(outputPath)
+	fi, err := os.Stat(cleanOutput)
+	if os.IsNotExist(err) || (err == nil && fi.Size() == 0) {
+		return e.WriteFinOpsParquet(ctx, records, outputPath)
+	}
+
+	if err := e.insertFinOpsRecords(ctx, "incoming_finops", records); err != nil {
+		return fmt.Errorf("failed inserting incoming finops records: %w", err)
+	}
+
+	tempParquet := outputPath + ".tmp.parquet"
+	defer os.Remove(tempParquet)
+
+	upsertSQL := fmt.Sprintf(`
+	COPY (
+		WITH combined AS (
+			SELECT 
+				account_id, account_name, service, usage_date, usage_period,
+				amount, daily_amount, days_in_period, metric, frequency,
+				unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+			FROM read_parquet('%s')
+			UNION ALL
+			SELECT 
+				account_id, account_name, service, usage_date, usage_period,
+				amount, daily_amount, days_in_period, metric, frequency,
+				unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+			FROM incoming_finops
+		),
+		ranked AS (
+			SELECT *,
+				ROW_NUMBER() OVER (
+					PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, region, usage_type, primary_tag, secondary_tag
+					ORDER BY recorded_at DESC
+				) AS rn
+			FROM combined
+		)
+		SELECT 
+			account_id, account_name, service, usage_date, usage_period,
+			amount, daily_amount, days_in_period, metric, frequency,
+			unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+		FROM ranked
+		WHERE rn = 1
+	) TO '%s' (FORMAT PARQUET);
+	`, cleanOutput, cleanPath(tempParquet))
+
+	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("failed executing finops parquet upsert: %w", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing existing parquet before upsert: %w", err)
+	}
+	if err := os.Rename(tempParquet, outputPath); err != nil {
+		return fmt.Errorf("failed replacing parquet with upserted file: %w", err)
+	}
+
+	slog.InfoContext(ctx, "FinOps Parquet upsert completed successfully", "outputPath", cleanOutput, "incomingRecords", len(records))
+	return nil
+}
+
+func (e *Engine) insertSecOpsRecords(ctx context.Context, tableName string, records []cloud.SecurityRecord) error {
+	_, _ = e.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	createTable := fmt.Sprintf(`
+	CREATE TABLE %s (
 		account_id VARCHAR,
 		account_name VARCHAR,
 		service VARCHAR,
@@ -230,33 +301,43 @@ func (e *Engine) WriteSecOpsParquet(ctx context.Context, records []cloud.Securit
 		description VARCHAR,
 		remediation VARCHAR,
 		recorded_at DATETIME
-	);
-	`
+	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
-		return fmt.Errorf("failed to create secops table: %w", err)
+		return fmt.Errorf("failed to create %s table: %w", tableName, err)
 	}
 
-	if len(records) > 0 {
-		appender, conn, err := e.newAppender(ctx, "", "raw_secops")
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		defer appender.Close()
+	if len(records) == 0 {
+		return nil
+	}
 
-		now := time.Now()
-		for _, r := range records {
-			ts := r.Timestamp
-			if ts.IsZero() {
-				ts = now
-			}
-			if err := appender.AppendRow(r.AccountID, r.AccountName, r.Service, r.ResourceID, r.FindingType, r.Severity, r.Description, r.Remediation, ts); err != nil {
-				return fmt.Errorf("failed appending secops row: %w", err)
-			}
+	appender, conn, err := e.newAppender(ctx, "", tableName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer appender.Close()
+
+	now := time.Now()
+	for _, r := range records {
+		ts := r.Timestamp
+		if ts.IsZero() {
+			ts = now
 		}
-		if err := appender.Flush(); err != nil {
-			return fmt.Errorf("failed flushing secops appender: %w", err)
+		if err := appender.AppendRow(r.AccountID, r.AccountName, r.Service, r.ResourceID, r.FindingType, r.Severity, r.Description, r.Remediation, ts); err != nil {
+			return fmt.Errorf("failed appending secops row: %w", err)
 		}
+	}
+	return appender.Flush()
+}
+
+// WriteSecOpsParquet ingests SecurityRecord slice and writes directly to Parquet.
+func (e *Engine) WriteSecOpsParquet(ctx context.Context, records []cloud.SecurityRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	if err := e.insertSecOpsRecords(ctx, "raw_secops", records); err != nil {
+		return fmt.Errorf("failed inserting secops records: %w", err)
 	}
 
 	copySQL := fmt.Sprintf("COPY raw_secops TO '%s' (FORMAT PARQUET);", cleanPath(outputPath))
@@ -266,15 +347,65 @@ func (e *Engine) WriteSecOpsParquet(ctx context.Context, records []cloud.Securit
 	return nil
 }
 
-// WriteCloudOpsParquet ingests CloudOpsRecord slice and writes directly to Parquet.
-func (e *Engine) WriteCloudOpsParquet(ctx context.Context, records []cloud.CloudOpsRecord, outputPath string) error {
+// UpsertSecOpsParquet merges incoming SecurityRecords into an existing Parquet file.
+func (e *Engine) UpsertSecOpsParquet(ctx context.Context, records []cloud.SecurityRecord, outputPath string) error {
 	if err := ensureDir(outputPath); err != nil {
 		return err
 	}
 
-	_, _ = e.db.ExecContext(ctx, `DROP TABLE IF EXISTS raw_cloudops;`)
-	createTable := `
-	CREATE TABLE raw_cloudops (
+	cleanOutput := cleanPath(outputPath)
+	fi, err := os.Stat(cleanOutput)
+	if os.IsNotExist(err) || (err == nil && fi.Size() == 0) {
+		return e.WriteSecOpsParquet(ctx, records, outputPath)
+	}
+
+	if err := e.insertSecOpsRecords(ctx, "incoming_secops", records); err != nil {
+		return fmt.Errorf("failed inserting incoming secops records: %w", err)
+	}
+
+	tempParquet := outputPath + ".tmp.parquet"
+	defer os.Remove(tempParquet)
+
+	upsertSQL := fmt.Sprintf(`
+	COPY (
+		WITH combined AS (
+			SELECT account_id, account_name, service, resource_id, finding_type, severity, description, remediation, recorded_at
+			FROM read_parquet('%s')
+			UNION ALL
+			SELECT account_id, account_name, service, resource_id, finding_type, severity, description, remediation, recorded_at
+			FROM incoming_secops
+		),
+		ranked AS (
+			SELECT *,
+				ROW_NUMBER() OVER (
+					PARTITION BY account_id, service, resource_id, finding_type
+					ORDER BY recorded_at DESC
+				) AS rn
+			FROM combined
+		)
+		SELECT account_id, account_name, service, resource_id, finding_type, severity, description, remediation, recorded_at
+		FROM ranked
+		WHERE rn = 1
+	) TO '%s' (FORMAT PARQUET);
+	`, cleanOutput, cleanPath(tempParquet))
+
+	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("failed executing secops parquet upsert: %w", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing existing parquet before upsert: %w", err)
+	}
+	if err := os.Rename(tempParquet, outputPath); err != nil {
+		return fmt.Errorf("failed replacing parquet with upserted file: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) insertCloudOpsRecords(ctx context.Context, tableName string, records []cloud.CloudOpsRecord) error {
+	_, _ = e.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	createTable := fmt.Sprintf(`
+	CREATE TABLE %s (
 		account_id VARCHAR,
 		account_name VARCHAR,
 		service VARCHAR,
@@ -284,38 +415,103 @@ func (e *Engine) WriteCloudOpsParquet(ctx context.Context, records []cloud.Cloud
 		estimated_waste_usd DOUBLE,
 		recommendation VARCHAR,
 		recorded_at DATETIME
-	);
-	`
+	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
-		return fmt.Errorf("failed to create cloudops table: %w", err)
+		return fmt.Errorf("failed to create %s table: %w", tableName, err)
 	}
 
-	if len(records) > 0 {
-		appender, conn, err := e.newAppender(ctx, "", "raw_cloudops")
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		defer appender.Close()
+	if len(records) == 0 {
+		return nil
+	}
 
-		now := time.Now()
-		for _, r := range records {
-			ts := r.Timestamp
-			if ts.IsZero() {
-				ts = now
-			}
-			if err := appender.AppendRow(r.AccountID, r.AccountName, r.Service, r.ResourceID, r.IssueType, r.ResourceAge, r.EstimatedWaste, r.Recommendation, ts); err != nil {
-				return fmt.Errorf("failed appending cloudops row: %w", err)
-			}
+	appender, conn, err := e.newAppender(ctx, "", tableName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer appender.Close()
+
+	now := time.Now()
+	for _, r := range records {
+		ts := r.Timestamp
+		if ts.IsZero() {
+			ts = now
 		}
-		if err := appender.Flush(); err != nil {
-			return fmt.Errorf("failed flushing cloudops appender: %w", err)
+		if err := appender.AppendRow(r.AccountID, r.AccountName, r.Service, r.ResourceID, r.IssueType, r.ResourceAge, r.EstimatedWaste, r.Recommendation, ts); err != nil {
+			return fmt.Errorf("failed appending cloudops row: %w", err)
 		}
+	}
+	return appender.Flush()
+}
+
+// WriteCloudOpsParquet ingests CloudOpsRecord slice and writes directly to Parquet.
+func (e *Engine) WriteCloudOpsParquet(ctx context.Context, records []cloud.CloudOpsRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	if err := e.insertCloudOpsRecords(ctx, "raw_cloudops", records); err != nil {
+		return fmt.Errorf("failed inserting cloudops records: %w", err)
 	}
 
 	copySQL := fmt.Sprintf("COPY raw_cloudops TO '%s' (FORMAT PARQUET);", cleanPath(outputPath))
 	if _, err := e.db.ExecContext(ctx, copySQL); err != nil {
 		return fmt.Errorf("failed to export cloudops parquet: %w", err)
+	}
+	return nil
+}
+
+// UpsertCloudOpsParquet merges incoming CloudOpsRecords into an existing Parquet file.
+func (e *Engine) UpsertCloudOpsParquet(ctx context.Context, records []cloud.CloudOpsRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	cleanOutput := cleanPath(outputPath)
+	fi, err := os.Stat(cleanOutput)
+	if os.IsNotExist(err) || (err == nil && fi.Size() == 0) {
+		return e.WriteCloudOpsParquet(ctx, records, outputPath)
+	}
+
+	if err := e.insertCloudOpsRecords(ctx, "incoming_cloudops", records); err != nil {
+		return fmt.Errorf("failed inserting incoming cloudops records: %w", err)
+	}
+
+	tempParquet := outputPath + ".tmp.parquet"
+	defer os.Remove(tempParquet)
+
+	upsertSQL := fmt.Sprintf(`
+	COPY (
+		WITH combined AS (
+			SELECT account_id, account_name, service, resource_id, issue_type, resource_age_days, estimated_waste_usd, recommendation, recorded_at
+			FROM read_parquet('%s')
+			UNION ALL
+			SELECT account_id, account_name, service, resource_id, issue_type, resource_age_days, estimated_waste_usd, recommendation, recorded_at
+			FROM incoming_cloudops
+		),
+		ranked AS (
+			SELECT *,
+				ROW_NUMBER() OVER (
+					PARTITION BY account_id, service, resource_id, issue_type
+					ORDER BY recorded_at DESC
+				) AS rn
+			FROM combined
+		)
+		SELECT account_id, account_name, service, resource_id, issue_type, resource_age_days, estimated_waste_usd, recommendation, recorded_at
+		FROM ranked
+		WHERE rn = 1
+	) TO '%s' (FORMAT PARQUET);
+	`, cleanOutput, cleanPath(tempParquet))
+
+	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("failed executing cloudops parquet upsert: %w", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing existing parquet before upsert: %w", err)
+	}
+	if err := os.Rename(tempParquet, outputPath); err != nil {
+		return fmt.Errorf("failed replacing parquet with upserted file: %w", err)
 	}
 	return nil
 }
@@ -377,6 +573,109 @@ func (e *Engine) WriteAnomaliesParquet(ctx context.Context, records []cloud.Anom
 	return nil
 }
 
+func (e *Engine) insertAnomalyRecords(ctx context.Context, tableName string, records []cloud.AnomalyRecord) error {
+	_, _ = e.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	createTable := fmt.Sprintf(`
+	CREATE TABLE %s (
+		ops_domain VARCHAR,
+		account_id VARCHAR,
+		account_name VARCHAR,
+		service VARCHAR,
+		resource_or_key VARCHAR,
+		metric VARCHAR,
+		actual_value DOUBLE,
+		expected_value DOUBLE,
+		deviation_ratio DOUBLE,
+		severity VARCHAR,
+		status VARCHAR,
+		timestamp TIMESTAMP
+	);`, tableName)
+	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
+		return fmt.Errorf("failed to create %s table: %w", tableName, err)
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	appender, conn, err := e.newAppender(ctx, "", tableName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	defer appender.Close()
+
+	now := time.Now()
+	for _, r := range records {
+		ts := r.Timestamp
+		if ts.IsZero() {
+			ts = now
+		}
+		if err := appender.AppendRow(r.OpsDomain, r.AccountID, r.AccountName, r.Service, r.ResourceOrKey, r.Metric, r.ActualValue, r.ExpectedValue, r.Deviation, r.Severity, r.Status, ts); err != nil {
+			return fmt.Errorf("failed appending %s row: %w", tableName, err)
+		}
+	}
+	if err := appender.Flush(); err != nil {
+		return fmt.Errorf("failed flushing %s appender: %w", tableName, err)
+	}
+	return nil
+}
+
+// UpsertAnomaliesParquet merges incoming AnomalyRecords into an existing Parquet file.
+func (e *Engine) UpsertAnomaliesParquet(ctx context.Context, records []cloud.AnomalyRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	cleanOutput := cleanPath(outputPath)
+	fi, err := os.Stat(cleanOutput)
+	if os.IsNotExist(err) || (err == nil && fi.Size() == 0) {
+		return e.WriteAnomaliesParquet(ctx, records, outputPath)
+	}
+
+	if err := e.insertAnomalyRecords(ctx, "incoming_anomalies", records); err != nil {
+		return fmt.Errorf("failed inserting incoming anomalies records: %w", err)
+	}
+
+	tempParquet := outputPath + ".tmp.parquet"
+	defer os.Remove(tempParquet)
+
+	upsertSQL := fmt.Sprintf(`
+	COPY (
+		WITH combined AS (
+			SELECT ops_domain, account_id, account_name, service, resource_or_key, metric, actual_value, expected_value, deviation_ratio, severity, status, timestamp
+			FROM read_parquet('%s')
+			UNION ALL
+			SELECT ops_domain, account_id, account_name, service, resource_or_key, metric, actual_value, expected_value, deviation_ratio, severity, status, timestamp
+			FROM incoming_anomalies
+		),
+		ranked AS (
+			SELECT *,
+				ROW_NUMBER() OVER (
+					PARTITION BY account_id, service, resource_or_key, metric
+					ORDER BY timestamp DESC
+				) AS rn
+			FROM combined
+		)
+		SELECT ops_domain, account_id, account_name, service, resource_or_key, metric, actual_value, expected_value, deviation_ratio, severity, status, timestamp
+		FROM ranked
+		WHERE rn = 1
+	) TO '%s' (FORMAT PARQUET);
+	`, cleanOutput, cleanPath(tempParquet))
+
+	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("failed executing anomalies parquet upsert: %w", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing existing parquet before upsert: %w", err)
+	}
+	if err := os.Rename(tempParquet, outputPath); err != nil {
+		return fmt.Errorf("failed replacing parquet with upserted file: %w", err)
+	}
+	return nil
+}
+
 // AnalyzeFinOps runs statistical anomaly queries over raw FinOps parquet and saves anomalies to parquet.
 func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet string, thresholdMultiplier float64) ([]cloud.AnomalyRecord, error) {
 	if err := ensureDir(outputParquet); err != nil {
@@ -387,16 +686,31 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 		thresholdMultiplier = 1.3 // 30% increase threshold
 	}
 
+	cols, err := e.parquetColumnSet(ctx, inputParquet)
+	if err != nil {
+		return nil, err
+	}
+	primaryExpr := "CAST('' AS VARCHAR)"
+	secondaryExpr := "CAST('' AS VARCHAR)"
+	if _, ok := cols["primary_tag"]; ok {
+		primaryExpr = "COALESCE(primary_tag, '')"
+	}
+	if _, ok := cols["secondary_tag"]; ok {
+		secondaryExpr = "COALESCE(secondary_tag, '')"
+	}
+
 	query := fmt.Sprintf(`
 	WITH service_stats AS (
 		SELECT 
 			account_id,
 			account_name,
 			service,
+			%s AS primary_tag,
+			%s AS secondary_tag,
 			AVG(amount) AS avg_cost,
 			MAX(amount) AS max_cost
 		FROM read_parquet('%s')
-		GROUP BY account_id, account_name, service
+		GROUP BY account_id, account_name, service, %s, %s
 	)
 	SELECT 
 		'finops' AS ops_domain,
@@ -414,10 +728,12 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 			ELSE 'MEDIUM'
 		END AS severity,
 		'OPEN' AS status,
-		CURRENT_TIMESTAMP AS timestamp
+		CURRENT_TIMESTAMP AS timestamp,
+		primary_tag,
+		secondary_tag
 	FROM service_stats
 	WHERE max_cost >= (avg_cost * %f) OR max_cost > 100.0
-	`, cleanPath(inputParquet), thresholdMultiplier)
+	`, primaryExpr, secondaryExpr, cleanPath(inputParquet), primaryExpr, secondaryExpr, thresholdMultiplier)
 
 	exportSQL := fmt.Sprintf("COPY (%s) TO '%s' (FORMAT PARQUET);", query, cleanPath(outputParquet))
 	if _, err := e.db.ExecContext(ctx, exportSQL); err != nil {
@@ -514,9 +830,95 @@ func (e *Engine) readAnomaliesFromParquet(ctx context.Context, parquetPath strin
 	return records, nil
 }
 
+func (e *Engine) parquetColumnSet(ctx context.Context, parquetPath string) (map[string]struct{}, error) {
+	query := fmt.Sprintf("SELECT name FROM parquet_schema('%s') WHERE type IS NOT NULL", cleanPath(parquetPath))
+	rows, err := e.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading parquet schema: %w", err)
+	}
+	defer rows.Close()
+
+	cols := make(map[string]struct{})
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		cols[name] = struct{}{}
+	}
+	return cols, rows.Err()
+}
+
+func varcharOrEmpty(cols map[string]struct{}, name string) string {
+	if _, ok := cols[name]; ok {
+		return name
+	}
+	return fmt.Sprintf("CAST('' AS VARCHAR) AS %s", name)
+}
+
+// AnalyzedCostRow is a variance row plus the hierarchy tags carried from sense.
+type AnalyzedCostRow struct {
+	cloud.AnomalyRecord
+	PrimaryTag   string
+	SecondaryTag string
+}
+
+// ReadAnalyzedCostRows reads finops anomaly parquet, including hierarchy tags when present.
+func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) ([]AnalyzedCostRow, error) {
+	cols, err := e.parquetColumnSet(ctx, parquetPath)
+	if err != nil {
+		return nil, err
+	}
+	readSQL := fmt.Sprintf(`
+	SELECT
+		ops_domain, account_id, account_name, service, resource_or_key, metric,
+		CAST(actual_value AS DOUBLE), CAST(expected_value AS DOUBLE), CAST(deviation_ratio AS DOUBLE),
+		severity, status, timestamp,
+		%s, %s
+	FROM read_parquet('%s');`,
+		varcharOrEmpty(cols, "primary_tag"),
+		varcharOrEmpty(cols, "secondary_tag"),
+		cleanPath(parquetPath),
+	)
+	rows, err := e.db.QueryContext(ctx, readSQL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []AnalyzedCostRow
+	for rows.Next() {
+		var row AnalyzedCostRow
+		if err := rows.Scan(
+			&row.OpsDomain, &row.AccountID, &row.AccountName, &row.Service, &row.ResourceOrKey, &row.Metric,
+			&row.ActualValue, &row.ExpectedValue, &row.Deviation,
+			&row.Severity, &row.Status, &row.Timestamp,
+			&row.PrimaryTag, &row.SecondaryTag,
+		); err != nil {
+			return nil, err
+		}
+		records = append(records, row)
+	}
+	return records, rows.Err()
+}
+
+const enrichedHierarchySelect = `
+		CAST('' AS VARCHAR) AS project_id,
+		CAST('' AS VARCHAR) AS project,
+		CAST('' AS VARCHAR) AS application_id,
+		CAST('' AS VARCHAR) AS application,
+		CAST('' AS VARCHAR) AS environment_id,
+		CAST('' AS VARCHAR) AS service_category_id,
+		CAST('' AS VARCHAR) AS service_category,
+		CAST('' AS VARCHAR) AS business_unit_id,
+		CAST('' AS VARCHAR) AS owner_id,
+		CAST('' AS VARCHAR) AS cost_center_id,
+		CAST('' AS VARCHAR) AS customer_function_id,
+		CAST('' AS VARCHAR) AS customer_function`
+
 // EnrichRecords enriches anomaly records with Landing Zone organizational context and writes enriched.parquet.
 func (e *Engine) EnrichRecords(ctx context.Context, inputParquet, outputParquet string) ([]cloud.EnrichedRecord, error) {
-	if err := ensureDir(outputParquet) ; err != nil {
+	if err := ensureDir(outputParquet); err != nil {
 		return nil, err
 	}
 
@@ -558,6 +960,23 @@ func (e *Engine) EnrichRecords(ctx context.Context, inputParquet, outputParquet 
 			WHEN ops_domain = 'secops' THEN 'Apply restrictive bucket policy or rotate stale credentials immediately'
 			ELSE 'Snapshot and terminate orphaned resource'
 		END AS action_recommended,
+		'BU-' || UPPER(SUBSTR(service, 1, 6)) AS project_id,
+		CASE 
+			WHEN service IN ('AmazonEC2', 'Compute') THEN 'Core Platform'
+			WHEN service IN ('AmazonS3', 'Storage') THEN 'Data Engineering'
+			WHEN service IN ('AWSIdentityAccessManagement', 'Security') THEN 'Security Operations'
+			ELSE 'Digital Products'
+		END AS project,
+		CAST('' AS VARCHAR) AS application_id,
+		CAST('' AS VARCHAR) AS application,
+		'CC-' || SUBSTR(account_id, 1, 4) AS environment_id,
+		CAST('' AS VARCHAR) AS service_category_id,
+		CAST('' AS VARCHAR) AS service_category,
+		'BU-' || UPPER(SUBSTR(service, 1, 6)) AS business_unit_id,
+		CAST('' AS VARCHAR) AS owner_id,
+		'CC-' || SUBSTR(account_id, 1, 4) AS cost_center_id,
+		CAST('' AS VARCHAR) AS customer_function_id,
+		CAST('' AS VARCHAR) AS customer_function,
 		timestamp
 	FROM read_parquet('%s')
 	`, cleanPath(inputParquet))
@@ -570,15 +989,10 @@ func (e *Engine) EnrichRecords(ctx context.Context, inputParquet, outputParquet 
 	return e.ReadEnrichedFromParquet(ctx, outputParquet)
 }
 
-// WriteEnrichedParquet ingests EnrichedRecord slice and writes directly to Parquet.
-func (e *Engine) WriteEnrichedParquet(ctx context.Context, records []cloud.EnrichedRecord, outputPath string) error {
-	if err := ensureDir(outputPath); err != nil {
-		return err
-	}
-
-	_, _ = e.db.ExecContext(ctx, `DROP TABLE IF EXISTS raw_enriched;`)
-	createTable := `
-	CREATE TABLE raw_enriched (
+func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, records []cloud.EnrichedRecord) error {
+	_, _ = e.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s;", tableName))
+	createTable := fmt.Sprintf(`
+	CREATE TABLE %s (
 		ops_domain VARCHAR,
 		account_id VARCHAR,
 		account_name VARCHAR,
@@ -594,25 +1008,34 @@ func (e *Engine) WriteEnrichedParquet(ctx context.Context, records []cloud.Enric
 		potential_savings DOUBLE,
 		severity VARCHAR,
 		action_recommended VARCHAR,
+		project_id VARCHAR,
+		project VARCHAR,
+		application_id VARCHAR,
+		application VARCHAR,
+		environment_id VARCHAR,
+		service_category_id VARCHAR,
+		service_category VARCHAR,
+		business_unit_id VARCHAR,
+		owner_id VARCHAR,
+		cost_center_id VARCHAR,
+		customer_function_id VARCHAR,
+		customer_function VARCHAR,
 		timestamp TIMESTAMP
-	);
-	`
+	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
-		return fmt.Errorf("failed to create enriched table: %w", err)
+		return fmt.Errorf("failed to create %s table: %w", tableName, err)
 	}
 
-	tx, err := e.db.BeginTx(ctx, nil)
+	if len(records) == 0 {
+		return nil
+	}
+
+	appender, conn, err := e.newAppender(ctx, "", tableName)
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO raw_enriched VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	defer stmt.Close()
+	defer conn.Close()
+	defer appender.Close()
 
 	now := time.Now()
 	for _, r := range records {
@@ -620,18 +1043,31 @@ func (e *Engine) WriteEnrichedParquet(ctx context.Context, records []cloud.Enric
 		if ts.IsZero() {
 			ts = now
 		}
-		if _, err := stmt.ExecContext(ctx,
+		if err := appender.AppendRow(
 			r.OpsDomain, r.AccountID, r.AccountName, r.Environment, r.BusinessUnit,
 			r.Owner, r.CostCenter, r.Service, r.ResourceOrKey, r.Metric,
 			r.ActualValue, r.ExpectedValue, r.PotentialSavings, r.Severity,
-			r.ActionRecommended, ts,
+			r.ActionRecommended,
+			r.ProjectID, r.Project, r.ApplicationID, r.Application,
+			r.EnvironmentID, r.ServiceCategoryID, r.ServiceCategory,
+			r.BusinessUnitID, r.OwnerID, r.CostCenterID,
+			r.CustomerFunctionID, r.CustomerFunction,
+			ts,
 		); err != nil {
-			tx.Rollback()
-			return err
+			return fmt.Errorf("failed appending enriched row: %w", err)
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	return appender.Flush()
+}
+
+// WriteEnrichedParquet ingests EnrichedRecord slice and writes directly to Parquet.
+func (e *Engine) WriteEnrichedParquet(ctx context.Context, records []cloud.EnrichedRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
 		return err
+	}
+
+	if err := e.insertEnrichedRecords(ctx, "raw_enriched", records); err != nil {
+		return fmt.Errorf("failed inserting enriched records: %w", err)
 	}
 
 	copySQL := fmt.Sprintf("COPY raw_enriched TO '%s' (FORMAT PARQUET);", cleanPath(outputPath))
@@ -641,15 +1077,109 @@ func (e *Engine) WriteEnrichedParquet(ctx context.Context, records []cloud.Enric
 	return nil
 }
 
+// UpsertEnrichedParquet merges incoming EnrichedRecords into an existing Parquet file.
+func (e *Engine) UpsertEnrichedParquet(ctx context.Context, records []cloud.EnrichedRecord, outputPath string) error {
+	if err := ensureDir(outputPath); err != nil {
+		return err
+	}
+
+	cleanOutput := cleanPath(outputPath)
+	fi, err := os.Stat(cleanOutput)
+	if os.IsNotExist(err) || (err == nil && fi.Size() == 0) {
+		return e.WriteEnrichedParquet(ctx, records, outputPath)
+	}
+
+	if err := e.insertEnrichedRecords(ctx, "incoming_enriched", records); err != nil {
+		return fmt.Errorf("failed inserting incoming enriched records: %w", err)
+	}
+
+	tempParquet := outputPath + ".tmp.parquet"
+	defer os.Remove(tempParquet)
+
+	cols, err := e.parquetColumnSet(ctx, outputPath)
+	if err != nil {
+		return err
+	}
+	existingSelect := enrichedColumnSelect(cols)
+	incomingSelect := enrichedColumnSelect(nil)
+
+	upsertSQL := fmt.Sprintf(`
+	COPY (
+		WITH combined AS (
+			SELECT %s
+			FROM read_parquet('%s')
+			UNION ALL
+			SELECT %s
+			FROM incoming_enriched
+		),
+		ranked AS (
+			SELECT *,
+				ROW_NUMBER() OVER (
+					PARTITION BY ops_domain, account_id, service, resource_or_key, metric, project, application
+					ORDER BY timestamp DESC
+				) AS rn
+			FROM combined
+		)
+		SELECT %s
+		FROM ranked
+		WHERE rn = 1
+	) TO '%s' (FORMAT PARQUET);
+	`, existingSelect, cleanOutput, incomingSelect, incomingSelect, cleanPath(tempParquet))
+
+	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("failed executing enriched parquet upsert: %w", err)
+	}
+
+	if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed removing existing parquet before upsert: %w", err)
+	}
+	if err := os.Rename(tempParquet, outputPath); err != nil {
+		return fmt.Errorf("failed replacing parquet with upserted file: %w", err)
+	}
+	return nil
+}
+
 // ReadEnrichedFromParquet reads enriched records from Parquet.
+func enrichedColumnSelect(cols map[string]struct{}) string {
+	names := []string{
+		"ops_domain", "account_id", "account_name", "environment", "business_unit", "owner",
+		"cost_center", "service", "resource_or_key", "metric", "actual_value", "expected_value",
+		"potential_savings", "severity", "action_recommended",
+		"project_id", "project", "application_id", "application", "environment_id",
+		"service_category_id", "service_category", "business_unit_id", "owner_id", "cost_center_id",
+		"customer_function_id", "customer_function", "timestamp",
+	}
+	parts := make([]string, len(names))
+	for i, name := range names {
+		if cols == nil {
+			parts[i] = name
+			continue
+		}
+		if _, ok := cols[name]; ok {
+			parts[i] = name
+			continue
+		}
+		if name == "timestamp" {
+			parts[i] = "CAST(NULL AS TIMESTAMP) AS timestamp"
+			continue
+		}
+		if name == "actual_value" || name == "expected_value" || name == "potential_savings" {
+			parts[i] = fmt.Sprintf("CAST(0 AS DOUBLE) AS %s", name)
+			continue
+		}
+		parts[i] = fmt.Sprintf("CAST('' AS VARCHAR) AS %s", name)
+	}
+	return strings.Join(parts, ", ")
+}
+
 func (e *Engine) ReadEnrichedFromParquet(ctx context.Context, parquetPath string) ([]cloud.EnrichedRecord, error) {
+	cols, err := e.parquetColumnSet(ctx, parquetPath)
+	if err != nil {
+		return nil, err
+	}
 	readSQL := fmt.Sprintf(`
-	SELECT 
-		ops_domain, account_id, account_name, environment, business_unit, owner, 
-		cost_center, service, resource_or_key, metric, 
-		CAST(actual_value AS DOUBLE), CAST(expected_value AS DOUBLE), 
-		CAST(potential_savings AS DOUBLE), severity, action_recommended, timestamp 
-	FROM read_parquet('%s');`, cleanPath(parquetPath))
+	SELECT %s
+	FROM read_parquet('%s');`, enrichedColumnSelect(cols), cleanPath(parquetPath))
 
 	rows, err := e.db.QueryContext(ctx, readSQL)
 	if err != nil {
@@ -663,13 +1193,16 @@ func (e *Engine) ReadEnrichedFromParquet(ctx context.Context, parquetPath string
 		if err := rows.Scan(
 			&r.OpsDomain, &r.AccountID, &r.AccountName, &r.Environment, &r.BusinessUnit, &r.Owner,
 			&r.CostCenter, &r.Service, &r.ResourceOrKey, &r.Metric, &r.ActualValue, &r.ExpectedValue,
-			&r.PotentialSavings, &r.Severity, &r.ActionRecommended, &r.Timestamp,
+			&r.PotentialSavings, &r.Severity, &r.ActionRecommended,
+			&r.ProjectID, &r.Project, &r.ApplicationID, &r.Application, &r.EnvironmentID,
+			&r.ServiceCategoryID, &r.ServiceCategory, &r.BusinessUnitID, &r.OwnerID, &r.CostCenterID,
+			&r.CustomerFunctionID, &r.CustomerFunction, &r.Timestamp,
 		); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 // WriteEnforceAuditParquet writes enforcement audit logs to Parquet.

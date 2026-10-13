@@ -178,3 +178,178 @@ func TestInspectCurrentParquet(t *testing.T) {
 	}
 }
 
+func TestDuckDBEngine_UpsertFinOps(t *testing.T) {
+	tempDir := t.TempDir()
+	parquetPath := filepath.Join(tempDir, "finops_upsert.parquet")
+
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatalf("Failed to initialize duckdb engine: %v", err)
+	}
+	defer engine.Close()
+
+	ctx := context.Background()
+
+	// Initial batch: 2 records (EC2, S3) on 2026-09-01
+	batch1Time := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+	batch1 := []cloud.CostRecord{
+		{
+			AccountID:    "111122223333",
+			AccountName:  "LZ-Prod",
+			Service:      "AmazonEC2",
+			UsageDate:    "2026-09-01",
+			Amount:       100.0,
+			Metric:       "UnblendedCost",
+			Frequency:    "DAILY",
+			Region:       "ap-southeast-1",
+			PrimaryTag:   "Alpha",
+			SecondaryTag: "Web",
+			Timestamp:    batch1Time,
+		},
+		{
+			AccountID:    "111122223333",
+			AccountName:  "LZ-Prod",
+			Service:      "AmazonS3",
+			UsageDate:    "2026-09-01",
+			Amount:       50.0,
+			Metric:       "UnblendedCost",
+			Frequency:    "DAILY",
+			Region:       "ap-southeast-1",
+			PrimaryTag:   "Alpha",
+			SecondaryTag: "Storage",
+			Timestamp:    batch1Time,
+		},
+	}
+
+	// 1. Initial upsert into empty file (creates file)
+	if err := engine.UpsertFinOpsParquet(ctx, batch1, parquetPath); err != nil {
+		t.Fatalf("Initial UpsertFinOpsParquet failed: %v", err)
+	}
+
+	// Verify 2 records exist
+	var count1 int
+	if err := engine.db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s')", cleanPath(parquetPath))).Scan(&count1); err != nil {
+		t.Fatalf("Count query failed: %v", err)
+	}
+	if count1 != 2 {
+		t.Fatalf("Expected 2 records after initial write, got %d", count1)
+	}
+
+	// Batch 2: 1 updated record (EC2 with updated amount $175 and newer timestamp) and 1 new record (RDS)
+	batch2Time := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	batch2 := []cloud.CostRecord{
+		{
+			AccountID:    "111122223333",
+			AccountName:  "LZ-Prod",
+			Service:      "AmazonEC2",
+			UsageDate:    "2026-09-01",
+			Amount:       175.0, // Updated amount!
+			Metric:       "UnblendedCost",
+			Frequency:    "DAILY",
+			Region:       "ap-southeast-1",
+			PrimaryTag:   "Alpha",
+			SecondaryTag: "Web",
+			Timestamp:    batch2Time,
+		},
+		{
+			AccountID:    "111122223333",
+			AccountName:  "LZ-Prod",
+			Service:      "AmazonRDS", // New service
+			UsageDate:    "2026-09-01",
+			Amount:       80.0,
+			Metric:       "UnblendedCost",
+			Frequency:    "DAILY",
+			Region:       "ap-southeast-1",
+			PrimaryTag:   "Alpha",
+			SecondaryTag: "Database",
+			Timestamp:    batch2Time,
+		},
+	}
+
+	// 2. Second upsert: merges batch2 into existing parquet
+	if err := engine.UpsertFinOpsParquet(ctx, batch2, parquetPath); err != nil {
+		t.Fatalf("Second UpsertFinOpsParquet failed: %v", err)
+	}
+
+	// Verify total records is 3 (EC2 updated, S3 retained, RDS added)
+	var count2 int
+	if err := engine.db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM read_parquet('%s')", cleanPath(parquetPath))).Scan(&count2); err != nil {
+		t.Fatalf("Count query failed: %v", err)
+	}
+	if count2 != 3 {
+		t.Fatalf("Expected 3 records after upsert, got %d", count2)
+	}
+
+	// Verify that EC2 record was updated to $175
+	var ec2Amount float64
+	if err := engine.db.QueryRowContext(ctx, fmt.Sprintf("SELECT amount FROM read_parquet('%s') WHERE service = 'AmazonEC2'", cleanPath(parquetPath))).Scan(&ec2Amount); err != nil {
+		t.Fatalf("EC2 query failed: %v", err)
+	}
+	if ec2Amount != 175.0 {
+		t.Errorf("Expected EC2 amount 175.0, got %f", ec2Amount)
+	}
+}
+
+func TestDuckDBEngine_UpsertEnriched(t *testing.T) {
+	tempDir := t.TempDir()
+	parquetPath := filepath.Join(tempDir, "enriched_upsert.parquet")
+
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatalf("Failed to initialize duckdb engine: %v", err)
+	}
+	defer engine.Close()
+
+	ctx := context.Background()
+
+	t1 := time.Date(2026, 9, 29, 8, 0, 0, 0, time.UTC)
+	batch1 := []cloud.EnrichedRecord{
+		{
+			OpsDomain: "finops", AccountID: "111122223333", AccountName: "Prod",
+			Service: "AmazonEC2", ResourceOrKey: "AmazonEC2", Metric: "CostSpike",
+			ActualValue: 300.0, ExpectedValue: 100.0, PotentialSavings: 200.0,
+			Severity: "HIGH", ActionRecommended: "Rightsize", Timestamp: t1,
+		},
+	}
+
+	if err := engine.UpsertEnrichedParquet(ctx, batch1, parquetPath); err != nil {
+		t.Fatalf("Initial UpsertEnrichedParquet failed: %v", err)
+	}
+
+	t2 := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	batch2 := []cloud.EnrichedRecord{
+		{
+			OpsDomain: "finops", AccountID: "111122223333", AccountName: "Prod",
+			Service: "AmazonEC2", ResourceOrKey: "AmazonEC2", Metric: "CostSpike",
+			ActualValue: 450.0, ExpectedValue: 100.0, PotentialSavings: 350.0, // Updated!
+			Severity: "CRITICAL", ActionRecommended: "Commit to Savings Plans", Timestamp: t2,
+		},
+		{
+			OpsDomain: "secops", AccountID: "111122223333", AccountName: "Prod",
+			Service: "AmazonS3", ResourceOrKey: "public-bucket", Metric: "OpenBucket",
+			ActualValue: 1.0, ExpectedValue: 0.0, PotentialSavings: 0.0,
+			Severity: "CRITICAL", ActionRecommended: "Block access", Timestamp: t2,
+		},
+	}
+
+	if err := engine.UpsertEnrichedParquet(ctx, batch2, parquetPath); err != nil {
+		t.Fatalf("Second UpsertEnrichedParquet failed: %v", err)
+	}
+
+	recs, err := engine.ReadEnrichedFromParquet(ctx, parquetPath)
+	if err != nil {
+		t.Fatalf("ReadEnrichedFromParquet failed: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("Expected 2 records (1 updated + 1 new), got %d", len(recs))
+	}
+
+	for _, r := range recs {
+		if r.Service == "AmazonEC2" {
+			if r.PotentialSavings != 350.0 || r.Severity != "CRITICAL" {
+				t.Errorf("EC2 record was not updated properly: savings=%f severity=%s", r.PotentialSavings, r.Severity)
+			}
+		}
+	}
+}
+

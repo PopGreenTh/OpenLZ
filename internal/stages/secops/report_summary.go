@@ -13,15 +13,19 @@ import (
 
 // ReportSummaryInput models inputs for secops-report-summary.
 type ReportSummaryInput struct {
-	InputPath  string `json:"inputPath"`
-	Format     string `json:"format"`
-	OutputPath string `json:"outputPath"`
+	InputPath       string `json:"inputPath"`
+	Format          string `json:"format"`
+	OutputPath      string `json:"outputPath"`
+	AppendTimestamp bool   `json:"appendTimestamp"`
+	Upsert          bool   `json:"upsert"`
+	Tenant          string `json:"tenant"`
 }
 
 // ExecuteReportSummary runs Stage 5: SecOps Posture Reporting.
 func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = "data/secops_enriched.parquet"
+		in.InputPath = types.AppendTenantToPath("data/secops_enriched.parquet", in.Tenant)
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath != "" {
@@ -42,32 +46,58 @@ func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.St
 		return nil, fmt.Errorf("could not read enriched dataset from %s: %w", in.InputPath, err)
 	}
 
+	outPath := in.OutputPath
+
 	switch strings.ToLower(in.Format) {
 	case "markdown", "md":
+		targetMD := in.OutputPath
+		if targetMD == "" {
+			targetMD = "secops_report.md"
+		}
+		if in.AppendTimestamp {
+			targetMD = types.AppendTimestampToPath(targetMD)
+		}
 		md := report.RenderMarkdown(records, "SecOps")
-		if in.OutputPath != "" {
-			_ = os.WriteFile(in.OutputPath, []byte(md), 0644)
+		if in.OutputPath != "" || in.AppendTimestamp {
+			_ = os.WriteFile(targetMD, []byte(md), 0644)
+			outPath = targetMD
 		} else {
 			fmt.Println(md)
 		}
 	case "powerbi":
-		mOut := "secops_report.m"
 		pOut := "secops_report.parquet"
 		if in.OutputPath != "" {
 			pOut = in.OutputPath
-			mOut = in.OutputPath + ".m"
+		}
+		if in.AppendTimestamp && !in.Upsert {
+			pOut = types.AppendTimestampToPath(pOut)
+		}
+		mOut := strings.TrimSuffix(pOut, ".parquet") + ".m"
+		if in.AppendTimestamp && in.Upsert {
+			mOut = types.AppendTimestampToPath(mOut)
+		}
+		if in.Upsert {
+			if err := engine.UpsertEnrichedParquet(ctx, records, pOut); err != nil {
+				return nil, err
+			}
 		}
 		if err := report.ExportPowerBI(ctx, records, pOut, mOut, engine); err != nil {
 			return nil, err
 		}
+		outPath = fmt.Sprintf("%s, %s", pOut, mOut)
 	case "excel", "csv":
 		cOut := "secops_report.csv"
 		if in.OutputPath != "" {
 			cOut = in.OutputPath
 		}
+		if in.AppendTimestamp {
+			cOut = types.AppendTimestampToPath(cOut)
+		}
 		if err := report.ExportExcel(ctx, records, cOut, "", engine, report.DefaultSecOpsSheet); err != nil {
 			return nil, err
 		}
+		baseOut := types.StripExtensions(cOut)
+		outPath = fmt.Sprintf("%s.xlsx, %s.csv, %s_excel.m", baseOut, baseOut, baseOut)
 	default:
 		report.RenderConsoleTable(records, "SecOps")
 	}
@@ -76,7 +106,7 @@ func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.St
 		Stage:       types.StageSecOpsReportSummary,
 		Success:     true,
 		RecordCount: len(records),
-		OutputPath:  in.OutputPath,
+		OutputPath:  outPath,
 		Message:     fmt.Sprintf("Generated SecOps report for %d records (format: %s)", len(records), in.Format),
 	}, nil
 }

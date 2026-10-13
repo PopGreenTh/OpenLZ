@@ -3,6 +3,7 @@ package finops
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/aws"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -12,17 +13,22 @@ import (
 
 // SenseCostAnomalyInput models inputs for finops-sense-costanomaly.
 type SenseCostAnomalyInput struct {
-	Accounts   []string `json:"accounts"`
-	StartDate  string   `json:"startDate"`
-	EndDate    string   `json:"endDate"`
-	OutputPath string   `json:"outputPath"`
-	Mock       bool     `json:"mock"`
+	Accounts        []string `json:"accounts"`
+	StartDate       string   `json:"startDate"`
+	EndDate         string   `json:"endDate"`
+	OutputPath      string   `json:"outputPath"`
+	AppendTimestamp bool     `json:"appendTimestamp"`
+	AppendOutput    bool     `json:"appendOutput"`
+	Upsert          bool     `json:"upsert"`
+	Mock            bool     `json:"mock"`
+	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseCostAnomaly runs Stage 1b: AWS Cost Anomaly Detection Sense.
 func ExecuteSenseCostAnomaly(ctx context.Context, in SenseCostAnomalyInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/finops_anomalies.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/finops_anomalies.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Mock && len(in.Accounts) == 0 {
@@ -57,15 +63,33 @@ func ExecuteSenseCostAnomaly(ctx context.Context, in SenseCostAnomalyInput) (*ty
 		allAnomalies = append(allAnomalies, anoms...)
 	}
 
-	if err := engine.WriteAnomaliesParquet(ctx, allAnomalies, in.OutputPath); err != nil {
-		return nil, fmt.Errorf("failed writing cost anomalies parquet: %w", err)
+	targetPath := types.AppendTimestampToPath(in.OutputPath)
+
+	if in.OutputPath != "" {
+		// Always write timestamped immutable parquet snapshot
+		if err := engine.WriteAnomaliesParquet(ctx, allAnomalies, targetPath); err != nil {
+			return nil, fmt.Errorf("failed writing cost anomalies parquet: %w", err)
+		}
+
+		// Option to append/upsert to the original --output
+		if in.AppendOutput || in.Upsert {
+			if err := engine.UpsertAnomaliesParquet(ctx, allAnomalies, in.OutputPath); err != nil {
+				return nil, fmt.Errorf("failed appending/upserting to original anomalies parquet: %w", err)
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("Sensed %d Cost Anomaly records into %s", len(allAnomalies), targetPath)
+	if in.AppendOutput || in.Upsert {
+		msg = fmt.Sprintf("Sensed %d Cost Anomaly records into %s (and appended to %s)", len(allAnomalies), targetPath, in.OutputPath)
 	}
 
 	return &types.StageResult{
 		Stage:       types.StageFinOpsSenseCostAnomaly,
 		Success:     true,
 		RecordCount: len(allAnomalies),
-		OutputPath:  in.OutputPath,
-		Message:     fmt.Sprintf("Sensed %d Cost Anomaly records into %s", len(allAnomalies), in.OutputPath),
+		OutputPath:  targetPath,
+		Message:     msg,
 	}, nil
 }
+

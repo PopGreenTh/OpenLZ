@@ -3,6 +3,7 @@ package secops
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/aws"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -12,15 +13,21 @@ import (
 
 // SenseVulnerInput models inputs for secops-sense-vulner.
 type SenseVulnerInput struct {
-	Accounts   []string `json:"accounts"`
-	OutputPath string   `json:"outputPath"`
-	Mock       bool     `json:"mock"`
+	Accounts        []string `json:"accounts"`
+	Format          string   `json:"format"`
+	OutputPath      string   `json:"outputPath"`
+	AppendTimestamp bool     `json:"appendTimestamp"`
+	AppendOutput    bool     `json:"appendOutput"`
+	Upsert          bool     `json:"upsert"`
+	Mock            bool     `json:"mock"`
+	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseVulner runs Stage 1b: SecOps Vulnerabilities & CVEs Sense.
 func ExecuteSenseVulner(ctx context.Context, in SenseVulnerInput) (*types.StageResult, error) {
+	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = "data/secops_vulner_raw.parquet"
+		in.OutputPath = types.AppendTenantToPath("data/secops_vulner_raw.parquet", in.Tenant)
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Mock && len(in.Accounts) == 0 {
@@ -55,15 +62,32 @@ func ExecuteSenseVulner(ctx context.Context, in SenseVulnerInput) (*types.StageR
 		allFindings = append(allFindings, findings...)
 	}
 
-	if err := engine.WriteSecOpsParquet(ctx, allFindings, in.OutputPath); err != nil {
-		return nil, fmt.Errorf("failed writing vulnerability parquet: %w", err)
+	targetPath := types.AppendTimestampToPath(in.OutputPath)
+
+	if in.OutputPath != "" {
+		// Always write timestamped immutable parquet snapshot
+		if err := engine.WriteSecOpsParquet(ctx, allFindings, targetPath); err != nil {
+			return nil, fmt.Errorf("failed writing vulnerability parquet: %w", err)
+		}
+
+		// Option to append/upsert to the original --output
+		if in.AppendOutput || in.Upsert {
+			if err := engine.UpsertSecOpsParquet(ctx, allFindings, in.OutputPath); err != nil {
+				return nil, fmt.Errorf("failed appending/upserting vulnerability parquet: %w", err)
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("Sensed %d vulnerability findings into %s", len(allFindings), targetPath)
+	if in.AppendOutput || in.Upsert {
+		msg = fmt.Sprintf("Sensed %d vulnerability findings into %s (and appended to %s)", len(allFindings), targetPath, in.OutputPath)
 	}
 
 	return &types.StageResult{
 		Stage:       types.StageSecOpsSenseVulner,
 		Success:     true,
 		RecordCount: len(allFindings),
-		OutputPath:  in.OutputPath,
-		Message:     fmt.Sprintf("Sensed %d vulnerability findings into %s", len(allFindings), in.OutputPath),
+		OutputPath:  targetPath,
+		Message:     msg,
 	}, nil
 }

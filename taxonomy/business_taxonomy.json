@@ -1,0 +1,43 @@
+{
+  "businessUnits": [
+    {
+      "id": "BU-DIGITAL",
+      "name": "Digital",
+      "owners": [
+        {
+          "id": "OWN-PAY",
+          "name": "Payments",
+          "costCenters": [
+            {
+              "id": "CC-PROD",
+              "name": "Production",
+              "customerFuncs": [
+                { "id": "CF-CHECKOUT", "name": "Checkout" }
+              ]
+            },
+            {
+              "id": "CC-STG",
+              "name": "Staging",
+              "customerFuncs": [
+                { "id": "CF-CHECKOUT-STG", "name": "Checkout Staging" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "OWN-DATA",
+          "name": "Data Platform",
+          "costCenters": [
+            {
+              "id": "CC-DATA",
+              "name": "Data Production",
+              "customerFuncs": [
+                { "id": "CF-LAKE", "name": "Lakehouse" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
