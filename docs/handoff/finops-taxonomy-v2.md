@@ -6,6 +6,12 @@
 > Shareable pages: [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu) (spec with diagram) ·
 > [Taxonomy v2 Handoff](https://claude.ai/artifact/TcFmz4hvhFjzzgTHxkXU9Q) (this document).
 
+> **v3 supersedes the model in §1, §2 and Task 0 (2026-10-14).** `docs/taxonomy-spec.md` now defines
+> **three hierarchies** (Biz, Project, Cloud) and the CloudValueDelta update mechanism. The code in
+> `internal/taxonomy` still implements v2. Do **Task 0v3** (below) instead of the model-specific parts of
+> Task 0; the parts of Task 0 that still apply are single tenant (item 3), Code naming (item 4) and
+> docs (item 5). `internal/attribution` already implements the v3 Project/Biz attribution policy.
+
 ---
 
 ## 0. Ground rules
@@ -81,6 +87,7 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 | Mocks | `internal/aws/mocks.go` | Every row has a real usage type. With `GroupBy=RESOURCE` each service gets a resource id (e.g. `i-0<account>a001`). |
 | CLI | `cmd/finops.go`, `cmd/stages.go`, `cmd/openlz-finops/main.go`, `cmd/taxonomy.go` | `--taxonomy <file>` replaces `--project-taxonomy` and `--business-taxonomy`. `openlz taxonomy list|validate|init` work on the new format. |
 | Power Query | `internal/powerquery/script.go` | Raw FinOps M scripts now declare 19 columns. |
+| Attribution resolver | `internal/attribution/` | Portable SQL (runs unchanged on embedded DuckDB and PostgreSQL) that attributes a cost line to the Project and Biz hierarchies: resource override → tag anchor (deepest tag wins) → evidence refinement (resource group, biz tag, account, region) → LZ as last resort → common ancestor → UNSPEC/UNALLOC padding. 13 reference cases in `testdata/` (10 scenarios + 3 regression guards) pass on DuckDB, and were verified on PostgreSQL 16. **Not wired into the pipeline yet; see Task 2b.** |
 
 ### How `Resolve` matches in two directions (decided with the user, see `taxonomy.go`)
 The loop is generic over `Schema` and repeats until nothing changes:
@@ -136,7 +143,20 @@ rm -rf data                        # data/ is gitignored, but keep the tree clea
 
 ## 4. Remaining tasks (do them in order)
 
-### Task 0: Align the code with `docs/taxonomy-spec.md`  ★ do first
+### Task 0v3: Move the taxonomy model to the three hierarchies  ★ do first
+Source of truth: `docs/taxonomy-spec.md` §2–§5. Work in `internal/taxonomy/schema.go` (`Schema`) first; Directus bootstrap, pull, push and validation then follow from it (ground rule 3).
+1. **Biz hierarchy:** BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer. Rename `owners` → `owner_teams`; rename `customer_funcs` → `customers`; add `product_lines` (parent `owner_teams`).
+2. **Project hierarchy:** Project → App → Environment → Feature → Function. Remove the `app_environments` junction; `environments.app` becomes RefParent. Add `features` and `functions`. Refs: Project *must* BusinessUnit; App *must* CostCenter; Environment *can* OwnerTeam; Feature *can* ProductLine; Function *can* Customer. Environment, Feature and Function codes are unique within their parent.
+3. **Cloud hierarchy:** LZ/Connection (attrs `csp`, `currency`, both required; `CSPChoices` defined once) → Account/CSPAccount → Region/Zone (`regions.csp` optional attr; region unique within its CSP, zone within its region) → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource. Remove the `csps` collection. Add `Attrs []AttrSpec{Field, Required, Choices}` to `CollectionSpec`.
+4. **Links:** aligned many-to-many junctions `project_lzs`, `app_accounts`, `environment_regions`; `Resource` and `ResourceGroup` carry an optional Project-path mapping (a ref to the deepest Project node). Feature and Function have no Cloud counterpart.
+5. **System nodes:** generate `<LEVEL>-UNSPEC` and `<LEVEL>-UNALLOC` for every valid path (spec §4). They are never edited in Directus and never pushed.
+6. **Consistency checks** (spec §3.5) are `Build` warnings, never errors. The spec's attribution rules are implemented by `internal/attribution`; do not re-implement them in `taxonomy.Catalog.Resolve`.
+7. **Enriched output columns:** add `feature_id`, `feature`, `function_id`, `function`, `owner_team_id`, `owner_team`, `product_line_id`, `product_line`, `customer_id`, `customer`, `lz_id`, `lz`, `connection_id`, `connection`, `billing_currency`, `zone_id`, `zone`, `attribution_trail`. Keep the existing `owner`/`owner_id` columns filled from OwnerTeam so reports and Power Query keep working. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column counts in §4 Task 3.
+8. **Raw FinOps** gains `connection_id` and `zone` (Cost Explorer `AZ` dimension, new `SERVICE_AZ` group-by mode). Thread them through `CostRecord`, `insertFinOpsRecords`, the upsert partition, Analyze pass-through, `AnalyzedCostRow` and the raw M scripts.
+
+Acceptance: all tests pass; `openlz taxonomy validate` passes with 0 warnings on the sample snapshot (rewrite `taxonomy/taxonomy.json` to the v3 shape); the sample reproduces the reference cases in `internal/attribution/testdata` end to end through Enrich (that needs Task 2b).
+
+### Task 0 (v2, partly superseded by Task 0v3 above)
 The code implements everything in §2 above. The spec adds the following; each item lists the files to change:
 
 1. **Owner → OwnerTeam.** Rename the collection `owners` → `owner_teams` (const `OwnerTeams`, label "Owner Team") in `internal/taxonomy/schema.go`, and rename the `owner` ref field on `customer_funcs` accordingly. In `Input`/`Output`, rename `Owner` → `OwnerTeam`. In `cloud.EnrichedRecord`, keep the existing `owner`/`owner_id` columns (reports and Power Query depend on them) and fill them from OwnerTeam; add no new columns for this rename.
@@ -153,13 +173,14 @@ The code implements everything in §2 above. The spec adds the following; each i
    - `grep -rni tenant --include=*.go .` must return nothing when done (except the one-release `"tenant"` read in snapshot JSON).
 4. **Code naming** (spec §1): the business key is called **Code**. In the snapshot JSON, rename the row key `"id"` → `"code"` and keep reading `"id"` as an alias for one release. Rename `Row.ID()` → `Row.Code()`. Keep the internal Go `Slot.ID` and the enriched `*_id` columns: they are output column names and must not change. Resources keep the key `"code"` too; its value is the cloud resource id.
 5. **Docs:** update the hierarchy and relation lists in `GEMINI.md` §2.5 to point at the spec.
-6. **LZ / Connection, with CSP as an LZ attribute** (spec §2–§4, confirmed 2026-10-14). The project hierarchy becomes Project → App → **LZ/Connection** → Environment/Account → Region/Zone → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource. **CSP is not a level:** it is an attribute of LZ (required) and of Region (optional). Each LZ also has one billing currency.
+6. **LZ / Connection, with CSP as an LZ attribute** (spec §2–§4, confirmed 2026-10-14). The project hierarchy becomes Project → App ↔ **Environment/Account** → Region/Zone → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource, with **LZ/Connection as a second parent of Environment** (an LZ is *not* under App: it hosts many Projects/Apps, and an App can run in several LZs, both through Environments). **CSP is not a level:** it is an attribute of LZ (required) and of Region (optional). Each LZ also has one billing currency.
    - **Attributes.** `Schema` only knows id/name/refs today. Add `Attrs []AttrSpec{Field string; Required bool; Choices []string}` to `CollectionSpec`. `Build` validates required attributes and checks values against `Choices` when set; snapshot JSON carries attributes as plain string keys; Directus bootstrap creates them as string fields (a `select-dropdown` with the choices when `Choices` is set).
    - **Remove the `csps` collection.** Define the CSP list once, e.g. `var CSPChoices = []string{"AWS", "Azure", "GCP", "OCI"}`. `landing_zones` gets attrs `csp` (required, `CSPChoices`) and `currency` (required, ISO 4217). `regions.csp` changes from a ref to an attribute (optional, `CSPChoices`). `ScopeRef` becomes a scope *field*, so it can name an attribute; region uniqueness stays `(csp, code)`. Move the sample `csps` rows into the LZ and Region attributes, and update the tests that resolve CSP (`TestRegionUniqueWithinCSP` and the full-hierarchy test).
    - **New collections.** `landing_zones` and `connections` (ref `landing_zone`: RefParent → `landing_zones`). Add `environments.landing_zone` (RefParent → `landing_zones`) and `accounts.connection` (RefCan → `connections`). LZ and Connection are organizational (not `Catalog`), so top-down LZ → Connection and LZ → Environment work through `narrow`.
    - **Resolve.** The row's CSP is its own `csp` value, else its LZ's `csp`, else its Region's `csp`. `Output.CSP` stays a `Slot` (ID = the CSP code, Name = a display name such as "Amazon Web Services" from a small lookup next to `CSPChoices`), so the enriched `csp_id`/`csp` columns keep their meaning. Region lookup is scoped by that CSP.
    - Raw FinOps gains `connection_id`: the payer account id in payer mode, empty otherwise. Thread it through `CostRecord`, `insertFinOpsRecords` (19 → 20 columns), the upsert partition, Analyze pass-through and `AnalyzedCostRow`, and the raw M scripts.
    - `Input.ConnectionID`; `Output.LZ`, `Output.Connection`; enriched columns `lz_id, lz, connection_id, connection, billing_currency` (43 → 48 after item 2). `billing_currency` is the LZ's currency.
+   - **LZ + App narrowing.** No direct App ↔ LZ link exists. `narrow` already intersects candidates, so a row whose Account/Connection gives the LZ and whose tag gives the App resolves its Environment to App's Environments ∩ LZ's Environments. Add a test: `APP-GATEWAY` with `ENV-PAY-PROD` in `LZ-MAIN` and `ENV-PAY-DR` in `LZ-DR`; an Account under a `LZ-DR` Connection plus tag `APP-GATEWAY` resolves to `ENV-PAY-DR`; an LZ hosting two Apps with a shared Environment still yields Project only when both Apps share it. Add a `Build` warning for an App with no Environment in any LZ.
    - Warnings: an Account's Connection in a different LZ than its Environment (`Build`). In Enrich, log counts of rows whose `currency` ≠ their LZ's currency, and of rows whose Region's CSP ≠ their LZ's CSP; keep the rows.
 7. **Region / Zone** (spec §2, confirmed 2026-10-14). Zone is an availability zone; it can be mapped to Region, and its Code is unique only within its Region.
    - Add `zones` after `regions` in `Schema`, with ref `region` (RefCan → `regions`), `ScopeRef: "region"` and `Catalog: true`. Add a `lookupZone(region, raw)` like `lookupRegion`: scoped to the row's Region when one is known, otherwise unique across all zones.
@@ -279,6 +300,35 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
   diff <(jq -S . /tmp/before.json) <(jq -S . taxonomy/taxonomy.json)   # only row order may differ
   ```
 
+### Task 2b: Wire the attribution resolver into Enrich
+`internal/attribution` is tested but stands alone. The current Enrich stage still uses `taxonomy.Catalog.Resolve`, which implements the older model.
+1. Build the three input tables from the data the pipeline already has: `node` from the taxonomy snapshot (every valid Project path prefix plus the Biz codes each level references, including system-generated `*-UNSPEC` nodes), `evidence` from the Cloud links, `lines` from the analyzed cost rows. Load them into the DuckDB engine and call `attribution.Resolve`.
+2. Distinct first: the tag-scoring step compares every line with every node. Resolve distinct (tags, account, region, resource group, resource) combinations once, then join the result back to the cost rows. Scale is untested.
+3. Map `ProjectHash` / `BizHash` onto the enriched columns, and write `Trail` to a new `attribution_trail` column so an audit view can filter on `tag-corrected`, `rg!`, `*-UNSPEC` and `*-UNALLOC`.
+4. Keep the old resolver behind a flag until the output matches on the mock pipeline.
+5. The 3-hierarchy design is agreed (spec v3). The resolver assumes Environment is under App and a Project path of 5 levels, so do Task 0v3 first.
+
+Policy choices baked into the resolver (confirmed by the user 2026-10-14): the deepest valid tag (Environment, Feature or Function) wins over upper tags, and a corrected upper tag is flagged `tag-corrected`; LZ is used as evidence, as a last resort when nothing more specific is known; unresolved levels become `-UNSPEC` at every level, not only Feature/Function.
+
+PostgreSQL: the same query can back a Directus audit view. Run `attribution.SQL()` output with `psql -f` after creating the tables from `attribution.Schema`; it uses `AS MATERIALIZED`, so it needs PostgreSQL 12+.
+
+### Task 2c: CloudValueDelta (keep attributions current)
+Spec §8 is the contract; this task builds it on top of Task 2b. Package: `internal/delta`.
+1. **Line table.** Persist per cost line (business key from raw upsert): `input_hash`, `amount`, `taxonomy_version`, `project_hash`, `biz_hash`, `trail`, `prev_project_hash`, `prev_biz_hash`, `resolved_at`, `changed_at`. Plus the append-only `attribution_history(line_key, taxonomy_version, project_hash, biz_hash, valid_from)`. Both live in the DuckDB cache/data store, not in the raw parquet.
+2. **Data delta.** In Sense's upsert, classify every line as `NEW`, `AMOUNT`, `KEYS` or `REMOVED` by comparing `input_hash` and `amount`. `input_hash` covers exactly the inputs `attribution` reads (spec §8.2); amount is excluded.
+3. **Mapping delta.** `openlz taxonomy pull` computes `taxonomy_version` (hash of the canonical snapshot) and writes the changed key set (added, removed, renamed, moved nodes; changed evidence and alias rows) next to the snapshot.
+4. **Select and re-attribute** per spec §8.3 step 3. If the node set changed, re-resolve all distinct input combinations and join back; otherwise only the selected lines. Move the old result to `prev_*` and to the history table.
+5. **Restate all periods.** Reports read the latest result; the history gives the "as reported then" view.
+6. **Movement report.** Per run, print counts by delta kind and the cost moved between Projects per currency; list lines that moved to or from `*-UNSPEC` / `*-UNALLOC`.
+7. **Alias table.** Spec §3.3 / §6 step 1: add an alias evidence kind to `internal/attribution` (it is specified but not implemented), before wiring delta so alias edits count as changed keys.
+
+Acceptance (add as tests):
+- A second run with no new data and no taxonomy change writes nothing (idempotent).
+- Changing one resource override re-attributes exactly the lines for that resource, across all periods, and `prev_project_hash` holds the old path.
+- Adding a new Environment re-resolves lines that were `UNSPEC`/`UNALLOC` and leaves fully tagged lines untouched.
+- Total cost per currency is identical before and after every re-attribution.
+- Running the same inputs and taxonomy twice gives byte-identical results.
+
 ### Task 2: Pipeline flags
 `cmd/pipeline.go` hard-codes `SenseCostExplorerInput` without `GroupBy` and `EnrichCostCentersInput` without `TaxonomyPath`. Add `--group-by` (passed to FinOps sense) and `--taxonomy` (passed to FinOps enrich). The defaults must stay the same as today.
 
@@ -295,10 +345,12 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - `GEMINI.md` and `CLAUDE.md` already point here. After Task 1, change the "in progress" note to "done".
 
 ## 5. Product decisions (answered 2026-10-14)
+- **Spec v3 (2026-10-14):** three hierarchies (Biz, Project, Cloud) with Environment under App, aligned Cloud↔Project links and CloudValueDelta restating all periods (confirmed "Yes all"). Supersedes the bullets below where they differ.
 - **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
 - **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
 - **Region / Zone (2026-10-14):** Region becomes the pair Region/Zone; Zone can be mapped to Region (Task 0 item 7).
 - **CSP and LZ / Connection (2026-10-14):** each LZ has exactly one CSP, so **CSP is an attribute of the LZ** (and of Region), not a level; Region stays below Account. Account maps to its billing Connection; Environment is under an LZ; **one billing currency per LZ** (Task 0 item 6).
+- **Attribution policy (2026-10-14):** the deepest tag (Env/Feature/Function) wins; LZ is used (last resort); every unresolved level becomes UNSPEC. Implemented in `internal/attribution`.
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
 - **Q3 – environments vs apps:** there are both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
