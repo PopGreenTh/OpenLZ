@@ -1,0 +1,101 @@
+[
+  {
+    "id": 1,
+    "title": "golden path, 100% compliant",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-PAY|FUNC-QR|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-WALLET|CUST-B2C|",
+    "flags": []
+  },
+  {
+    "id": 2,
+    "title": "top-only tags, RG known",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-PAY|FUNC-QR|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-WALLET|CUST-B2C|",
+    "flags": []
+  },
+  {
+    "id": 3,
+    "title": "top-only tags, no RG",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": []
+  },
+  {
+    "id": 4,
+    "title": "leaf-only tag FUNC-QR",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-PAY|FUNC-QR|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-WALLET|CUST-B2C|",
+    "flags": []
+  },
+  {
+    "id": 5,
+    "title": "cross-branch conflict (PRJ-ECOM + Loyalty leaf tags)",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-PTS|FUNC-REDEEM|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-REWARDS|CUST-VIP|",
+    "flags": [
+      "tag-corrected"
+    ]
+  },
+  {
+    "id": 6,
+    "title": "typo in App (APP-CHKKK)",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-PAY|FUNC-QR|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-WALLET|CUST-B2C|",
+    "flags": [
+      "tag-corrected"
+    ]
+  },
+  {
+    "id": 7,
+    "title": "shared EKS account, only #App=APP-LOY",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": []
+  },
+  {
+    "id": 8,
+    "title": "zero tags, dedicated account",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": []
+  },
+  {
+    "id": 9,
+    "title": "only biz tag CostCenter=CC-202, shared account",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": []
+  },
+  {
+    "id": 10,
+    "title": "resource ID hard override",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-PTS|FUNC-REDEEM|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-REWARDS|CUST-VIP|",
+    "flags": [
+      "override"
+    ]
+  },
+  {
+    "id": 11,
+    "title": "NEW: valid Loyalty tags but RG maps to a Checkout function",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": [
+      "rg!"
+    ]
+  },
+  {
+    "id": 12,
+    "title": "NEW: untagged, shared account, LZ maps to PRJ-ECOM",
+    "project": "|PRJ-UNALLOC|APP-UNALLOC|ENV-UNALLOC|FEAT-UNALLOC|FUNC-UNALLOC|",
+    "biz": "|BU-UNALLOC|CC-UNALLOC|TEAM-UNALLOC|PL-UNALLOC|CUST-UNALLOC|",
+    "flags": []
+  },
+  {
+    "id": 13,
+    "title": "NEW: dedicated account in a region with no Env mapping",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-UNSPEC|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": []
+  }
+]

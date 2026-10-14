@@ -81,6 +81,7 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 | Mocks | `internal/aws/mocks.go` | Every row has a real usage type. With `GroupBy=RESOURCE` each service gets a resource id (e.g. `i-0<account>a001`). |
 | CLI | `cmd/finops.go`, `cmd/stages.go`, `cmd/openlz-finops/main.go`, `cmd/taxonomy.go` | `--taxonomy <file>` replaces `--project-taxonomy` and `--business-taxonomy`. `openlz taxonomy list|validate|init` work on the new format. |
 | Power Query | `internal/powerquery/script.go` | Raw FinOps M scripts now declare 19 columns. |
+| Attribution resolver | `internal/attribution/` | Portable SQL (runs unchanged on embedded DuckDB and PostgreSQL) that attributes a cost line to the Project and Biz hierarchies: resource override → tag anchor (deepest tag wins) → evidence refinement (resource group, biz tag, account, region) → LZ as last resort → common ancestor → UNSPEC/UNALLOC padding. 13 reference cases in `testdata/` (10 scenarios + 3 regression guards) pass on DuckDB, and were verified on PostgreSQL 16. **Not wired into the pipeline yet; see Task 2b.** |
 
 ### How `Resolve` matches in two directions (decided with the user, see `taxonomy.go`)
 The loop is generic over `Schema` and repeats until nothing changes:
@@ -279,6 +280,18 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
   /tmp/openlz taxonomy pull
   diff <(jq -S . /tmp/before.json) <(jq -S . taxonomy/taxonomy.json)   # only row order may differ
   ```
+
+### Task 2b: Wire the attribution resolver into Enrich
+`internal/attribution` is tested but stands alone. The current Enrich stage still uses `taxonomy.Catalog.Resolve`, which implements the older model.
+1. Build the three input tables from the data the pipeline already has: `node` from the taxonomy snapshot (every valid Project path prefix plus the Biz codes each level references, including system-generated `*-UNSPEC` nodes), `evidence` from the Cloud links, `lines` from the analyzed cost rows. Load them into the DuckDB engine and call `attribution.Resolve`.
+2. Distinct first: the tag-scoring step compares every line with every node. Resolve distinct (tags, account, region, resource group, resource) combinations once, then join the result back to the cost rows. Scale is untested.
+3. Map `ProjectHash` / `BizHash` onto the enriched columns, and write `Trail` to a new `attribution_trail` column so an audit view can filter on `tag-corrected`, `rg!`, `*-UNSPEC` and `*-UNALLOC`.
+4. Keep the old resolver behind a flag until the output matches on the mock pipeline.
+5. Blocked on the 3-hierarchy redesign (Biz / Project / Cloud) being agreed in `docs/taxonomy-spec.md`: the resolver assumes Environment is under App and a Project path of 5 levels.
+
+Open policy choices baked into the resolver (confirm with the user): the deepest valid tag wins over upper tags (flagged `tag-corrected`); LZ is used only when nothing else is known; unresolved levels become `-UNSPEC` at every level, not only Feature/Function.
+
+PostgreSQL: the same query can back a Directus audit view. Run `attribution.SQL()` output with `psql -f` after creating the tables from `attribution.Schema`; it uses `AS MATERIALIZED`, so it needs PostgreSQL 12+.
 
 ### Task 2: Pipeline flags
 `cmd/pipeline.go` hard-codes `SenseCostExplorerInput` without `GroupBy` and `EnrichCostCentersInput` without `TaxonomyPath`. Add `--group-by` (passed to FinOps sense) and `--taxonomy` (passed to FinOps enrich). The defaults must stay the same as today.
