@@ -45,6 +45,9 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - Both raw `Amount` and comparable `DailyAmount` must be persisted in DuckDB Parquet.
 
 ### 5. Cost Taxonomy & Multi-Tenancy
+> **Authoritative spec: `docs/taxonomy-spec.md`.** The summary below describes the current code; the
+> spec adds OwnerTeam, ProductLine, Code naming and shared catalogs (handoff Task 0).
+
 - **Hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
   - Biz: `BusinessUnit → CostCenter → Owner → CustomerFunc`
   - Project: `Project → App → Environment/Account → CSP/Region → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource`

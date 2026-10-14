@@ -24,6 +24,9 @@
 
 ## 1. The business model (what the user specified)
 
+> **`docs/taxonomy-spec.md` is the authoritative spec** (agreed 2026-10-14). If this section or the
+> code disagrees with it, the spec wins. Task 0 below lists where the code currently differs.
+
 ```
 Biz Cost Hierarchy                 Project Cost Hierarchy
 + BusinessUnit                     - Project
@@ -131,6 +134,28 @@ rm -rf data                        # data/ is gitignored, but keep the tree clea
 ---
 
 ## 4. Remaining tasks (do them in order)
+
+### Task 0: Align the code with `docs/taxonomy-spec.md`  ★ do first
+The code implements everything in §2 above. The spec adds the following; each item lists the files to change:
+
+1. **Owner → OwnerTeam.** Rename the collection `owners` → `owner_teams` (const `OwnerTeams`, label "Owner Team") in `internal/taxonomy/schema.go`, and rename the `owner` ref field on `customer_funcs` accordingly. In `Input`/`Output`, rename `Owner` → `OwnerTeam`. In `cloud.EnrichedRecord`, keep the existing `owner`/`owner_id` columns (reports and Power Query depend on them) and fill them from OwnerTeam; add no new columns for this rename.
+2. **New level ProductLine** between OwnerTeam and CustomerFunc:
+   - `product_lines` with Refs `owner_team` (RefParent → `owner_teams`) and `app` (RefCan → `apps`). `customer_funcs.owner` becomes `customer_funcs.product_line` (RefParent → `product_lines`).
+   - New `Input.ProductLine` tag and `Output.ProductLine` slot.
+   - New enriched columns `product_line_id`, `product_line`. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column count in this doc (41 → 43).
+   - Bottom-up gains CustomerFunc → ProductLine → OwnerTeam and ProductLine → App. This lets a resource in a shared Environment reach its App; add a test for that.
+   - Add a warning in `Build`: ProductLine.app.cost_center ≠ ProductLine.owner_team.cost_center (spec §3.3).
+3. **Shared catalogs** (spec §4): CSP, Region, ServiceCat, Service, ServiceUsage, Usage are shared by all tenants.
+   - Add `Shared bool` to `CollectionSpec` and set it on those six collections. (`Catalog` stays as is; ResourceGroup/Resource are catalog but **not** shared.)
+   - Snapshot files: shared collections live in **`taxonomy/catalog.json`** (no tenant). Tenant files keep only tenant-owned collections. `taxonomy.Load(path)` becomes `LoadTenant(tenantPath, catalogPath)`, which merges both, then `Build`. Reject a shared collection inside a tenant file, and a tenant collection inside `catalog.json`.
+   - `LoadOptional`: the catalog path defaults to `taxonomy/catalog.json` next to the tenant file. A missing catalog is fine (catalog levels just don't resolve).
+   - Enrich: `EnrichCostCentersInput` gains `CatalogPath` (JSON `catalogPath`, CLI `--catalog`).
+   - Directus (Task 1): shared collections have **no** `tenant` field. Pull/push them with `--catalog` (one file), separately from tenant pulls.
+   - Move the catalog rows out of `taxonomy/taxonomy.json` and `taxonomy/taxonomy_tenant_a.json` into `taxonomy/catalog.json`, merging duplicates (tenant_a's catalog is a subset of default's).
+4. **Code naming** (spec §1): the business key is called **Code**. In the snapshot JSON, rename the row key `"id"` → `"code"` and keep reading `"id"` as an alias for one release. Rename `Row.ID()` → `Row.Code()`. Keep the internal Go `Slot.ID` and the enriched `*_id` columns: they are output column names and must not change. Resources keep the key `"code"` too; its value is the cloud resource id.
+5. **Docs:** update the hierarchy and relation lists in `GEMINI.md` §2.5 to point at the spec.
+
+Acceptance: all tests pass. `openlz taxonomy validate` and `validate --tenant tenant_a` pass with 0 warnings. The mock smoke test in §3 shows `product_line_id` filled for resource rows whose ResourceGroup has a CustomerFunc.
 
 ### Task 1: Directus integration (`internal/directus` + CLI)  ★ main task
 
@@ -259,6 +284,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - `GEMINI.md` and `CLAUDE.md` already point here. After Task 1, change the "in progress" note to "done".
 
 ## 5. Product decisions (answered 2026-10-14)
+- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds Tenant as root, OwnerTeam (renamed Owner), ProductLine (can ref App), Code naming, and catalogs shared across tenants. ServiceUsage/Usage are shared on the assumption that they are provider-defined; the user has not confirmed this yet.
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
 - **Q3 – environments vs apps:** tenants have both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
