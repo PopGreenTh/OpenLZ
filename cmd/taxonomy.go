@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/taxonomy"
@@ -18,47 +16,39 @@ var (
 
 var taxonomyCmd = &cobra.Command{
 	Use:   "taxonomy",
-	Short: "Manage and validate Landing Zone cost hierarchy taxonomy JSON files",
-	Long: `Inspect, list, validate, and scaffold multi-tenant project and business taxonomy JSON files.
-Supports standalone files (taxonomy/project_taxonomy.json) and multi-tenant files (e.g. taxonomy/project_taxonomy_<tenant>.json).`,
+	Short: "Manage and validate Landing Zone cost hierarchy taxonomy snapshots",
+	Long: `Inspect, list, validate, and scaffold multi-tenant cost taxonomy snapshots.
+
+One JSON snapshot per tenant: taxonomy/taxonomy.json (default tenant) and
+taxonomy/taxonomy_<tenant>.json. Snapshots mirror the Directus collections.`,
+}
+
+func taxonomyTenant() string {
+	if taxTenant != "" {
+		return taxTenant
+	}
+	return rootTenant
 }
 
 var taxonomyListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List discovered multi-tenant taxonomies and default taxonomy files",
+	Short: "List the default and per-tenant taxonomy snapshots",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir := taxTenantDir
-		if dir == "" {
-			dir = "taxonomy"
-		}
-
-		tenants, err := taxonomy.DiscoverTenants(dir)
+		tenants, err := taxonomy.DiscoverTenants(taxTenantDir)
 		if err != nil {
 			return err
 		}
-
 		fmt.Println("==================================================")
 		fmt.Println(" OpenLZ Cost Hierarchy Taxonomies")
 		fmt.Println("==================================================")
-
-		// Check default taxonomy
-		defProj := filepath.Join(dir, "project_taxonomy.json")
-		defBiz := filepath.Join(dir, "business_taxonomy.json")
-		hasDefProj := fileExists(defProj)
-		hasDefBiz := fileExists(defBiz)
-
-		fmt.Printf("Default Taxonomy:\n")
-		fmt.Printf("  Project:  %s (exists: %t)\n", defProj, hasDefProj)
-		fmt.Printf("  Business: %s (exists: %t)\n\n", defBiz, hasDefBiz)
-
+		def := taxonomy.PathForTenant(taxTenantDir, "")
+		fmt.Printf("Default: %s (exists: %t)\n\n", def, fileExists(def))
 		if len(tenants) == 0 {
-			fmt.Println("Discovered Tenants: (none detected in " + dir + ")")
+			fmt.Println("Tenants: (none detected in " + taxTenantDir + ")")
 		} else {
-			fmt.Printf("Discovered Tenants (%d):\n", len(tenants))
+			fmt.Printf("Tenants (%d):\n", len(tenants))
 			for _, t := range tenants {
-				projP := taxonomy.ResolveProjectTaxonomyPath("", t)
-				bizP := taxonomy.ResolveBusinessTaxonomyPath("", t)
-				fmt.Printf("  • Tenant: %-15s -> Project: %-40s Business: %s\n", t, projP, bizP)
+				fmt.Printf("  • %-15s -> %s\n", t, taxonomy.PathForTenant(taxTenantDir, t))
 			}
 		}
 		fmt.Println("==================================================")
@@ -68,158 +58,64 @@ var taxonomyListCmd = &cobra.Command{
 
 var taxonomyValidateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "Validate taxonomy files against hierarchy rules and shared identity invariants",
+	Short: "Validate a taxonomy snapshot against the hierarchy relations",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		tenant := taxTenant
-		if tenant == "" {
-			tenant = rootTenant
+		path := taxonomy.PathForTenant(taxTenantDir, taxonomyTenant())
+		fmt.Printf("Validating %s...\n", path)
+		if !fileExists(path) {
+			return fmt.Errorf("taxonomy snapshot not found: %s", path)
 		}
-
-		projP := taxonomy.ResolveProjectTaxonomyPath("", tenant)
-		bizP := taxonomy.ResolveBusinessTaxonomyPath("", tenant)
-
-		targetDesc := "default taxonomy"
-		if tenant != "" {
-			targetDesc = fmt.Sprintf("tenant %q", tenant)
-		}
-
-		fmt.Printf("Validating %s...\n", targetDesc)
-		fmt.Printf("  Project file:  %s\n", projP)
-		fmt.Printf("  Business file: %s\n", bizP)
-
-		if !fileExists(projP) {
-			return fmt.Errorf("project taxonomy file not found: %s", projP)
-		}
-		if !fileExists(bizP) {
-			return fmt.Errorf("business taxonomy file not found: %s", bizP)
-		}
-
-		cat, err := taxonomy.Load(projP, bizP)
+		cat, err := taxonomy.Load(path)
 		if err != nil {
-			fmt.Printf("❌ Validation FAILED: %v\n", err)
-			return err
+			fmt.Printf("❌ Validation FAILED:\n%v\n", err)
+			return fmt.Errorf("taxonomy validation failed")
 		}
-
-		fmt.Println("✅ Validation PASSED: Taxonomy schema and shared identity invariants are valid.")
-		_ = cat
+		for _, spec := range taxonomy.Schema {
+			fmt.Printf("  %-16s %d\n", spec.Name, cat.Count(spec.Name))
+		}
+		for _, w := range cat.Warnings() {
+			fmt.Printf("⚠️  %s\n", w)
+		}
+		fmt.Printf("✅ Validation PASSED (%d warnings).\n", len(cat.Warnings()))
 		return nil
 	},
 }
 
 var taxonomyInitCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize starter project and business taxonomy JSON files for a tenant",
+	Short: "Initialize a starter taxonomy snapshot for a tenant",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		tenant := taxTenant
+		tenant := strings.TrimSpace(taxonomyTenant())
 		if tenant == "" {
-			tenant = rootTenant
+			return fmt.Errorf("--tenant is required to initialize a tenant taxonomy")
 		}
-		if strings.TrimSpace(tenant) == "" {
-			return fmt.Errorf("--tenant is required to initialize tenant taxonomy files")
+		path := taxonomy.PathForTenant(taxTenantDir, tenant)
+		if fileExists(path) {
+			return fmt.Errorf("taxonomy already exists for tenant %q: %s", tenant, path)
 		}
 
-		dir := taxTenantDir
-		if dir == "" {
-			dir = "taxonomy"
+		u := strings.ToUpper(tenant)
+		snap := taxonomy.NewSnapshot(tenant)
+		snap.Add(taxonomy.BusinessUnits, taxonomy.Row{"id": "BU-" + u, "name": tenant + " Division"})
+		snap.Add(taxonomy.CostCenters, taxonomy.Row{"id": "CC-" + u + "-CORE", "name": tenant + " Core", "business_unit": "BU-" + u})
+		snap.Add(taxonomy.Owners, taxonomy.Row{"id": "OWN-" + u + "-CORE", "name": tenant + " Core Team", "cost_center": "CC-" + u + "-CORE"})
+		snap.Add(taxonomy.CustomerFuncs, taxonomy.Row{"id": "CF-" + u + "-PRIMARY", "name": "Primary Service", "owner": "OWN-" + u + "-CORE"})
+		snap.Add(taxonomy.Projects, taxonomy.Row{"id": "PRJ-" + u, "name": tenant + " Project", "business_unit": "BU-" + u})
+		snap.Add(taxonomy.Apps, taxonomy.Row{"id": "APP-" + u + "-CORE", "name": tenant + " Core App", "project": "PRJ-" + u, "cost_center": "CC-" + u + "-CORE"})
+		snap.Add(taxonomy.Environments, taxonomy.Row{"id": "ENV-" + u + "-PROD", "name": "Production", "app": "APP-" + u + "-CORE"})
+		snap.Add(taxonomy.Accounts, taxonomy.Row{"id": "123456789012", "name": "lz-" + tenant + "-prod", "environment": "ENV-" + u + "-PROD"})
+		snap.Add(taxonomy.CSPs, taxonomy.Row{"id": "AWS", "name": "Amazon Web Services"})
+		snap.Add(taxonomy.Regions, taxonomy.Row{"id": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"})
+		snap.Add(taxonomy.ServiceCats, taxonomy.Row{"id": "SC-COMPUTE", "name": "Compute"})
+		snap.Add(taxonomy.Services, taxonomy.Row{"id": "AmazonEC2", "name": "Amazon Elastic Compute Cloud - Compute", "service_cat": "SC-COMPUTE"})
+
+		if _, err := taxonomy.Build(snap); err != nil {
+			return fmt.Errorf("starter taxonomy is invalid: %w", err)
 		}
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := taxonomy.WriteSnapshot(path, snap); err != nil {
 			return err
 		}
-
-		projPath := filepath.Join(dir, fmt.Sprintf("project_taxonomy_%s.json", tenant))
-		bizPath := filepath.Join(dir, fmt.Sprintf("business_taxonomy_%s.json", tenant))
-
-		if fileExists(projPath) || fileExists(bizPath) {
-			return fmt.Errorf("taxonomy files already exist for tenant %q (%s or %s)", tenant, projPath, bizPath)
-		}
-
-		upperTenant := strings.ToUpper(tenant)
-		starterBiz := map[string]interface{}{
-			"businessUnits": []map[string]interface{}{
-				{
-					"id":   fmt.Sprintf("BU-%s", upperTenant),
-					"name": fmt.Sprintf("%s Division", strings.Title(tenant)),
-					"owners": []map[string]interface{}{
-						{
-							"id":   fmt.Sprintf("OWN-%s-CORE", upperTenant),
-							"name": fmt.Sprintf("%s Core Team", strings.Title(tenant)),
-							"costCenters": []map[string]interface{}{
-								{
-									"id":   fmt.Sprintf("CC-%s-PROD", upperTenant),
-									"name": fmt.Sprintf("%s Production", strings.Title(tenant)),
-									"customerFuncs": []map[string]interface{}{
-										{
-											"id":   fmt.Sprintf("CF-%s-PRIMARY", upperTenant),
-											"name": "Primary Service",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		starterProj := map[string]interface{}{
-			"projects": []map[string]interface{}{
-				{
-					"id":             fmt.Sprintf("BU-%s", upperTenant),
-					"name":           fmt.Sprintf("%s Division", strings.Title(tenant)),
-					"businessUnitId": fmt.Sprintf("BU-%s", upperTenant),
-					"apps": []map[string]interface{}{
-						{
-							"id":        fmt.Sprintf("OWN-%s-CORE", upperTenant),
-							"name":      fmt.Sprintf("%s Core Team", strings.Title(tenant)),
-							"ownerId":   fmt.Sprintf("OWN-%s-CORE", upperTenant),
-							"projectId": fmt.Sprintf("BU-%s", upperTenant),
-							"environments": []map[string]interface{}{
-								{
-									"id":           fmt.Sprintf("CC-%s-PROD", upperTenant),
-									"name":         fmt.Sprintf("%s Production", strings.Title(tenant)),
-									"costCenterId": fmt.Sprintf("CC-%s-PROD", upperTenant),
-									"accounts": []map[string]interface{}{
-										{
-											"id":            "111122223333",
-											"name":          fmt.Sprintf("lz-%s-prod", strings.ToLower(tenant)),
-											"environmentId": fmt.Sprintf("CC-%s-PROD", upperTenant),
-										},
-									},
-									"serviceCategories": []map[string]interface{}{
-										{
-											"id":             "SC-COMPUTE",
-											"name":           "Compute",
-											"customerFuncId": fmt.Sprintf("CF-%s-PRIMARY", upperTenant),
-											"services": []map[string]interface{}{
-												{
-													"id":           "AmazonEC2",
-													"name":         "Amazon Elastic Compute Cloud - Compute",
-													"serviceCatId": "SC-COMPUTE",
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		bizData, _ := json.MarshalIndent(starterBiz, "", "  ")
-		projData, _ := json.MarshalIndent(starterProj, "", "  ")
-
-		if err := os.WriteFile(bizPath, bizData, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", bizPath, err)
-		}
-		if err := os.WriteFile(projPath, projData, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", projPath, err)
-		}
-
-		fmt.Printf("✅ Initialized starter taxonomy for tenant %q:\n", tenant)
-		fmt.Printf("  • %s\n", bizPath)
-		fmt.Printf("  • %s\n", projPath)
+		fmt.Printf("✅ Initialized starter taxonomy for tenant %q: %s\n", tenant, path)
 		return nil
 	},
 }
@@ -230,7 +126,7 @@ func fileExists(p string) bool {
 }
 
 func init() {
-	taxonomyCmd.PersistentFlags().StringVar(&taxTenantDir, "dir", "taxonomy", "Directory containing taxonomy JSON files")
+	taxonomyCmd.PersistentFlags().StringVar(&taxTenantDir, "dir", taxonomy.DefaultDir, "Directory containing taxonomy JSON snapshots")
 	taxonomyCmd.PersistentFlags().StringVar(&taxTenant, "tenant", "", "Tenant identifier for multi-tenant taxonomy")
 
 	taxonomyCmd.AddCommand(taxonomyListCmd)

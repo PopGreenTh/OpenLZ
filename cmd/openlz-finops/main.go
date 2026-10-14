@@ -242,10 +242,9 @@ func init() {
 
 	// 3. enrich-costcenters
 	var (
-		fEnrIn          string
-		fEnrOut         string
-		fEnrProjectTax  string
-		fEnrBusinessTax string
+		fEnrIn       string
+		fEnrOut      string
+		fEnrTaxonomy string
 	)
 	cmdEnrich := &cobra.Command{
 		Use:     "enrich-costcenters",
@@ -262,11 +261,10 @@ func init() {
 				outPath = types.AppendTenantToPath(outPath, rootTenant)
 			}
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-				InputPath:            inPath,
-				OutputPath:           outPath,
-				ProjectTaxonomyPath:  fEnrProjectTax,
-				BusinessTaxonomyPath: fEnrBusinessTax,
-				Tenant:               rootTenant,
+				InputPath:    inPath,
+				OutputPath:   outPath,
+				TaxonomyPath: fEnrTaxonomy,
+				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -277,8 +275,7 @@ func init() {
 	}
 	cmdEnrich.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdEnrich.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
-	cmdEnrich.Flags().StringVar(&fEnrProjectTax, "project-taxonomy", "", "Project cost hierarchy JSON (default taxonomy/project_taxonomy.json when present)")
-	cmdEnrich.Flags().StringVar(&fEnrBusinessTax, "business-taxonomy", "", "Business cost hierarchy JSON (default taxonomy/business_taxonomy.json when present)")
+	cmdEnrich.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
 	rootCmd.AddCommand(cmdEnrich)
 
 	// 4. enforce-tagging

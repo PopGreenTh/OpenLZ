@@ -3,6 +3,7 @@ package finops
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -13,16 +14,15 @@ import (
 
 // EnrichCostCentersInput models inputs for finops-enrich-costcenters.
 type EnrichCostCentersInput struct {
-	InputPath            string `json:"inputPath"`
-	OutputPath           string `json:"outputPath"`
-	ProjectTaxonomyPath  string `json:"projectTaxonomyPath"`
-	BusinessTaxonomyPath string `json:"businessTaxonomyPath"`
-	Tenant               string `json:"tenant"`
+	InputPath    string `json:"inputPath"`
+	OutputPath   string `json:"outputPath"`
+	TaxonomyPath string `json:"taxonomyPath"` // Defaults to taxonomy/taxonomy[_<tenant>].json when present
+	Tenant       string `json:"tenant"`
 }
 
 // ExecuteEnrichCostCenters runs Stage 3: Annotate with Landing Zone Cost Centers & Metadata.
-// When project_taxonomy.json and business_taxonomy.json are present, empty hierarchy tags
-// sensed from Cost Explorer are filled from those trees.
+// When a taxonomy snapshot is present, every cost row is mapped onto the business and
+// project cost hierarchies; otherwise the built-in heuristic enrichment is used.
 func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*types.StageResult, error) {
 	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
@@ -34,28 +34,13 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 
-	if in.Tenant != "" {
-		if in.ProjectTaxonomyPath == "" {
-			in.ProjectTaxonomyPath = taxonomy.ResolveProjectTaxonomyPath("", in.Tenant)
-		}
-		if in.BusinessTaxonomyPath == "" {
-			in.BusinessTaxonomyPath = taxonomy.ResolveBusinessTaxonomyPath("", in.Tenant)
-		}
-	}
-	if in.ProjectTaxonomyPath != "" {
-		in.ProjectTaxonomyPath = types.ResolveAbsolutePath(in.ProjectTaxonomyPath)
-	}
-	if in.BusinessTaxonomyPath != "" {
-		in.BusinessTaxonomyPath = types.ResolveAbsolutePath(in.BusinessTaxonomyPath)
-	}
-
 	engine, err := duckdb.NewEngine()
 	if err != nil {
 		return nil, fmt.Errorf("duckdb init failed: %w", err)
 	}
 	defer engine.Close()
 
-	catalog, err := taxonomy.LoadOptional(in.ProjectTaxonomyPath, in.BusinessTaxonomyPath)
+	catalog, err := taxonomy.LoadOptional(in.TaxonomyPath, in.Tenant)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +57,9 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 			Message:     fmt.Sprintf("Enriched %d records with cost centers into %s", len(enriched), in.OutputPath),
 		}, nil
 	}
+	for _, w := range catalog.Warnings() {
+		slog.WarnContext(ctx, "Cost taxonomy warning", "tenant", catalog.Tenant, "warning", w)
+	}
 
 	rows, err := engine.ReadAnalyzedCostRows(ctx, in.InputPath)
 	if err != nil {
@@ -79,7 +67,7 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 	}
 	enriched := make([]cloud.EnrichedRecord, 0, len(rows))
 	for _, row := range rows {
-		enriched = append(enriched, mapEmptyTags(row, catalog))
+		enriched = append(enriched, mapHierarchy(row, catalog))
 	}
 	if err := engine.WriteEnrichedParquet(ctx, enriched, in.OutputPath); err != nil {
 		return nil, err
@@ -94,11 +82,17 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 	}, nil
 }
 
-func mapEmptyTags(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) cloud.EnrichedRecord {
-	resolved := catalog.Resolve(taxonomy.Input{
+// mapHierarchy resolves one analyzed cost row against the taxonomy. Levels the taxonomy
+// cannot resolve stay empty so the gaps are visible and can be fixed in Directus.
+func mapHierarchy(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) cloud.EnrichedRecord {
+	res := catalog.Resolve(taxonomy.Input{
 		AccountID:   row.AccountID,
 		AccountName: row.AccountName,
+		CSP:         row.CSP,
+		Region:      row.Region,
 		Service:     row.Service,
+		UsageType:   row.UsageType,
+		ResourceID:  row.ResourceID,
 		Project:     row.PrimaryTag,
 		App:         row.SecondaryTag,
 	})
@@ -107,23 +101,36 @@ func mapEmptyTags(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) cloud.E
 		OpsDomain:          row.OpsDomain,
 		AccountID:          row.AccountID,
 		AccountName:        row.AccountName,
-		Environment:        resolved.Environment.Name,
-		EnvironmentID:      resolved.Environment.ID,
-		BusinessUnit:       resolved.BusinessUnit.Name,
-		BusinessUnitID:     resolved.BusinessUnit.ID,
-		Owner:              resolved.Owner.Name,
-		OwnerID:            resolved.Owner.ID,
-		CostCenter:         resolved.CostCenter.Name,
-		CostCenterID:       resolved.CostCenter.ID,
-		Project:            resolved.Project.Name,
-		ProjectID:          resolved.Project.ID,
-		Application:        resolved.App.Name,
-		ApplicationID:      resolved.App.ID,
-		ServiceCategory:    resolved.ServiceCategory.Name,
-		ServiceCategoryID:  resolved.ServiceCategory.ID,
-		CustomerFunction:   resolved.CustomerFunction.Name,
-		CustomerFunctionID: resolved.CustomerFunction.ID,
+		BusinessUnitID:     res.BusinessUnit.ID,
+		BusinessUnit:       res.BusinessUnit.Name,
+		CostCenterID:       res.CostCenter.ID,
+		CostCenter:         res.CostCenter.Name,
+		OwnerID:            res.Owner.ID,
+		Owner:              res.Owner.Name,
+		CustomerFunctionID: res.CustomerFunction.ID,
+		CustomerFunction:   res.CustomerFunction.Name,
+		ProjectID:          res.Project.ID,
+		Project:            res.Project.Name,
+		ApplicationID:      res.App.ID,
+		Application:        res.App.Name,
+		EnvironmentID:      res.Environment.ID,
+		Environment:        res.Environment.Name,
+		CSPID:              res.CSP.ID,
+		CSP:                res.CSP.Name,
+		RegionID:           res.Region.ID,
+		Region:             res.Region.Name,
+		ServiceCategoryID:  res.ServiceCategory.ID,
+		ServiceCategory:    res.ServiceCategory.Name,
+		ServiceID:          res.Service.ID,
 		Service:            row.Service,
+		ServiceUsageID:     res.ServiceUsage.ID,
+		ServiceUsage:       res.ServiceUsage.Name,
+		UsageID:            res.Usage.ID,
+		Usage:              res.Usage.Name,
+		ResourceGroupID:    res.ResourceGroup.ID,
+		ResourceGroup:      res.ResourceGroup.Name,
+		ResourceID:         res.Resource.ID,
+		Resource:           res.Resource.Name,
 		ResourceOrKey:      row.ResourceOrKey,
 		Metric:             row.Metric,
 		ActualValue:        row.ActualValue,
@@ -131,107 +138,25 @@ func mapEmptyTags(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) cloud.E
 		Severity:           row.Severity,
 		Timestamp:          row.Timestamp,
 	}
-	if row.OpsDomain == "finops" {
+	// Unmatched raw values pass through as names; keep the sensed code in the id column.
+	if rec.CSPID == "" && rec.CSP == "" {
+		rec.CSPID = row.CSP
+	}
+	if rec.RegionID == "" {
+		rec.RegionID = row.Region
+		if rec.Region == row.Region {
+			rec.Region = ""
+		}
+	}
+	switch row.OpsDomain {
+	case "finops":
 		rec.PotentialSavings = row.ActualValue - row.ExpectedValue
-	} else if row.OpsDomain == "cloudops" {
+		rec.ActionRecommended = "Rightsize underutilized compute or commit to Savings Plans"
+	case "cloudops":
 		rec.PotentialSavings = row.ActualValue
+		rec.ActionRecommended = "Snapshot and terminate orphaned resource"
+	case "secops":
+		rec.ActionRecommended = "Apply restrictive bucket policy or rotate stale credentials immediately"
 	}
-	applyHeuristic(&rec)
 	return rec
-}
-
-func applyHeuristic(r *cloud.EnrichedRecord) {
-	accountName := strings.ToLower(r.AccountName)
-	if r.Environment == "" {
-		switch {
-		case strings.HasSuffix(r.AccountID, "1") || strings.Contains(accountName, "prod"):
-			r.Environment = "Production"
-		case strings.HasSuffix(r.AccountID, "2") || strings.Contains(accountName, "stg"):
-			r.Environment = "Staging"
-		default:
-			r.Environment = "Development"
-		}
-	}
-	if r.BusinessUnit == "" {
-		switch r.Service {
-		case "AmazonEC2", "Compute":
-			r.BusinessUnit = "Core Platform"
-		case "AmazonS3", "Storage":
-			r.BusinessUnit = "Data Engineering"
-		case "AWSIdentityAccessManagement", "Security":
-			r.BusinessUnit = "Security Operations"
-		default:
-			r.BusinessUnit = "Digital Products"
-		}
-	}
-	if r.Owner == "" {
-		switch r.OpsDomain {
-		case "secops":
-			r.Owner = "secops-lead@company.com"
-		case "finops":
-			r.Owner = "finops-team@company.com"
-		default:
-			r.Owner = "devops-infra@company.com"
-		}
-	}
-	if r.CostCenter == "" {
-		prefix := r.AccountID
-		if len(prefix) > 4 {
-			prefix = prefix[:4]
-		}
-		r.CostCenter = "CC-" + prefix
-	}
-	if r.ActionRecommended == "" {
-		switch r.OpsDomain {
-		case "finops":
-			r.ActionRecommended = "Rightsize underutilized compute or commit to Savings Plans"
-		case "secops":
-			r.ActionRecommended = "Apply restrictive bucket policy or rotate stale credentials immediately"
-		default:
-			r.ActionRecommended = "Snapshot and terminate orphaned resource"
-		}
-	}
-
-	// Enforce "must behave" identity relations:
-	// 1. ProjectID/Name must behave BusinessUnitID/Name
-	if r.Project == "" && r.BusinessUnit != "" {
-		r.Project = r.BusinessUnit
-	}
-	if r.BusinessUnit == "" && r.Project != "" {
-		r.BusinessUnit = r.Project
-	}
-	if r.ProjectID == "" && r.BusinessUnitID != "" {
-		r.ProjectID = r.BusinessUnitID
-	}
-	if r.BusinessUnitID == "" && r.ProjectID != "" {
-		r.BusinessUnitID = r.ProjectID
-	}
-
-	// 2. AppID/Name must behave OwnerID/Name
-	if r.Application == "" && r.Owner != "" && !strings.Contains(r.Owner, "@") {
-		r.Application = r.Owner
-	}
-	if r.Owner == "" && r.Application != "" {
-		r.Owner = r.Application
-	}
-	if r.ApplicationID == "" && r.OwnerID != "" {
-		r.ApplicationID = r.OwnerID
-	}
-	if r.OwnerID == "" && r.ApplicationID != "" {
-		r.OwnerID = r.ApplicationID
-	}
-
-	// 3. EnvironmentID/Name must behave CostCenterID/Name
-	if r.Environment == "" && r.CostCenter != "" {
-		r.Environment = r.CostCenter
-	}
-	if r.CostCenter == "" && r.Environment != "" {
-		r.CostCenter = r.Environment
-	}
-	if r.EnvironmentID == "" && r.CostCenterID != "" {
-		r.EnvironmentID = r.CostCenterID
-	}
-	if r.CostCenterID == "" && r.EnvironmentID != "" {
-		r.CostCenterID = r.EnvironmentID
-	}
 }
