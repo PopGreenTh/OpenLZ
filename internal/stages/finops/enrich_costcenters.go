@@ -16,6 +16,9 @@ type EnrichCostCentersInput struct {
 	InputPath    string `json:"inputPath"`
 	OutputPath   string `json:"outputPath"`
 	TaxonomyPath string `json:"taxonomyPath"` // Defaults to taxonomy/taxonomy.json when present
+	// LegacyResolver maps rows with the older two-way matcher (taxonomy.Catalog.Resolve)
+	// instead of internal/attribution.
+	LegacyResolver bool `json:"legacyResolver"`
 }
 
 // ExecuteEnrichCostCenters runs Stage 3: Annotate with Landing Zone Cost Centers & Metadata.
@@ -62,24 +65,16 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 	if err != nil {
 		return nil, err
 	}
-	enriched := make([]cloud.EnrichedRecord, 0, len(rows))
-	var regionCSP, zoneRegion int
-	for _, row := range rows {
-		rec, res := mapHierarchy(row, catalog)
-		if res.RegionCSPMismatch {
-			regionCSP++
+	var enriched []cloud.EnrichedRecord
+	if in.LegacyResolver {
+		enriched = resolveLegacy(rows, catalog)
+	} else {
+		enriched, err = attributeRows(ctx, engine, rows, catalog)
+		if err != nil {
+			return nil, err
 		}
-		if res.ZoneRegionMismatch {
-			zoneRegion++
-		}
-		enriched = append(enriched, rec)
 	}
-	if regionCSP > 0 {
-		slog.WarnContext(ctx, "Cost rows whose Region CSP differs from their LZ CSP", "rows", regionCSP)
-	}
-	if zoneRegion > 0 {
-		slog.WarnContext(ctx, "Cost rows whose Zone belongs to another Region", "rows", zoneRegion)
-	}
+	logMismatches(ctx, rows, catalog)
 	if err := engine.WriteEnrichedParquet(ctx, enriched, in.OutputPath); err != nil {
 		return nil, err
 	}
@@ -93,10 +88,9 @@ func ExecuteEnrichCostCenters(ctx context.Context, in EnrichCostCentersInput) (*
 	}, nil
 }
 
-// mapHierarchy resolves one analyzed cost row against the taxonomy. Levels the taxonomy
-// cannot resolve stay empty so the gaps are visible and can be fixed in Directus.
-func mapHierarchy(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) (cloud.EnrichedRecord, taxonomy.Output) {
-	res := catalog.Resolve(taxonomy.Input{
+// cloudInput is the part of a row that describes where it ran and how it was billed.
+func cloudInput(row duckdb.AnalyzedCostRow) taxonomy.Input {
+	return taxonomy.Input{
 		AccountID:    row.AccountID,
 		AccountName:  row.AccountName,
 		ConnectionID: row.ConnectionID,
@@ -106,9 +100,50 @@ func mapHierarchy(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) (cloud.
 		Service:      row.Service,
 		UsageType:    row.UsageType,
 		ResourceID:   row.ResourceID,
-		Project:      row.PrimaryTag,
-		App:          row.SecondaryTag,
-	})
+	}
+}
+
+// resolveLegacy maps every row with the two-way matcher. Levels it cannot resolve stay
+// empty so the gaps are visible and can be fixed in Directus.
+func resolveLegacy(rows []duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) []cloud.EnrichedRecord {
+	out := make([]cloud.EnrichedRecord, 0, len(rows))
+	for _, row := range rows {
+		in := cloudInput(row)
+		in.Project = row.PrimaryTag
+		in.App = row.SecondaryTag
+		out = append(out, enrichedRecord(row, catalog.Resolve(in)))
+	}
+	return out
+}
+
+// logMismatches reports rows that disagree with their LZ (spec §3.5, §7); the rows are kept.
+func logMismatches(ctx context.Context, rows []duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) {
+	var currency, regionCSP, zoneRegion int
+	for _, row := range rows {
+		res := catalog.ResolveCloud(cloudInput(row))
+		if res.BillingCurrency != "" && row.Currency != "" && res.BillingCurrency != row.Currency {
+			currency++
+		}
+		if res.RegionCSPMismatch {
+			regionCSP++
+		}
+		if res.ZoneRegionMismatch {
+			zoneRegion++
+		}
+	}
+	if currency > 0 {
+		slog.WarnContext(ctx, "Cost rows whose currency differs from their LZ billing currency", "rows", currency)
+	}
+	if regionCSP > 0 {
+		slog.WarnContext(ctx, "Cost rows whose Region CSP differs from their LZ CSP", "rows", regionCSP)
+	}
+	if zoneRegion > 0 {
+		slog.WarnContext(ctx, "Cost rows whose Zone belongs to another Region", "rows", zoneRegion)
+	}
+}
+
+// enrichedRecord builds the enriched row from a resolved hierarchy.
+func enrichedRecord(row duckdb.AnalyzedCostRow, res taxonomy.Output) cloud.EnrichedRecord {
 
 	rec := cloud.EnrichedRecord{
 		OpsDomain:      row.OpsDomain,
@@ -202,5 +237,5 @@ func mapHierarchy(row duckdb.AnalyzedCostRow, catalog *taxonomy.Catalog) (cloud.
 	case "secops":
 		rec.ActionRecommended = "Apply restrictive bucket policy or rotate stale credentials immediately"
 	}
-	return rec, res
+	return rec
 }

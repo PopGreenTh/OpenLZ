@@ -231,6 +231,7 @@ func init() {
 		fEnrIn       string
 		fEnrOut      string
 		fEnrTaxonomy string
+		fEnrLegacy   bool
 	)
 	cmdEnrich := &cobra.Command{
 		Use:     "enrich-costcenters",
@@ -241,9 +242,10 @@ func init() {
 			inPath := fEnrIn
 			outPath := fEnrOut
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-				InputPath:    inPath,
-				OutputPath:   outPath,
-				TaxonomyPath: fEnrTaxonomy,
+				InputPath:      inPath,
+				OutputPath:     outPath,
+				TaxonomyPath:   fEnrTaxonomy,
+				LegacyResolver: fEnrLegacy,
 			})
 			if err != nil {
 				return err
@@ -255,6 +257,7 @@ func init() {
 	cmdEnrich.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdEnrich.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
 	cmdEnrich.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
+	cmdEnrich.Flags().BoolVar(&fEnrLegacy, "legacy-resolver", false, "Map rows with the older two-way matcher instead of the attribution rules (docs/taxonomy-spec.md §6)")
 	rootCmd.AddCommand(cmdEnrich)
 
 	// 4. enforce-tagging

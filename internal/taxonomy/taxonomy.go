@@ -628,8 +628,19 @@ func (c *Catalog) ProjectNodes() []ProjectNode {
 // values. A tag that matches nothing does not block derivation; it is kept only when the slot
 // stays empty. A tag that is ambiguous by name (e.g. "Production") is matched again among the
 // children of an already-resolved parent.
-func (c *Catalog) Resolve(in Input) Output {
-	r := &resolver{c: c, slots: map[string]*node{}, pending: map[string]string{}}
+func (c *Catalog) Resolve(in Input) Output { return c.resolve(in, false) }
+
+// ResolveCloud resolves only the Cloud side of a row (account, connection, LZ, CSP, region,
+// zone, service, usage type, resource and its group). Tags are ignored and nothing is derived
+// from the Project or Biz hierarchies, so the result is safe to use as attribution evidence.
+func (c *Catalog) ResolveCloud(in Input) Output { return c.resolve(in, true) }
+
+func (c *Catalog) resolve(in Input, cloudOnly bool) Output {
+	r := &resolver{c: c, slots: map[string]*node{}, pending: map[string]string{}, cloudOnly: cloudOnly}
+	if cloudOnly {
+		in.Project, in.App, in.Environment, in.Feature, in.Function = "", "", "", "", ""
+		in.ServiceCategory, in.BusinessUnit, in.CostCenter, in.OwnerTeam, in.ProductLine, in.Customer = "", "", "", "", "", ""
+	}
 
 	tags := []struct{ coll, raw string }{
 		{Projects, in.Project}, {Apps, in.App}, {Environments, in.Environment},
@@ -697,7 +708,7 @@ func (c *Catalog) Resolve(in Input) Output {
 		if r.matchPendingInScope() {
 			changed = true
 		}
-		if !changed && !r.narrow(given) {
+		if !changed && (cloudOnly || !r.narrow(given)) {
 			break
 		}
 	}
@@ -775,11 +786,22 @@ type resolver struct {
 	c       *Catalog
 	slots   map[string]*node
 	pending map[string]string // unmatched tag values by collection
+	// cloudOnly keeps bottom-up derivation inside the Cloud hierarchy.
+	cloudOnly bool
+}
+
+// allowed reports whether the resolver may fill a node of coll.
+func (r *resolver) allowed(coll string) bool {
+	if !r.cloudOnly {
+		return true
+	}
+	spec, _ := Spec(coll)
+	return spec.Hierarchy == HierCloud
 }
 
 // set fills n's collection slot if it is still empty.
 func (r *resolver) set(n *node) bool {
-	if n == nil || r.slots[n.coll] != nil {
+	if n == nil || r.slots[n.coll] != nil || !r.allowed(n.coll) {
 		return false
 	}
 	r.slots[n.coll] = n

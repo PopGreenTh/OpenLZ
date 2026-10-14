@@ -82,6 +82,7 @@ func init() {
 		fEnrIn              string
 		fEnrOut             string
 		fEnrTaxonomy        string
+		fEnrLegacy          bool
 		fEnfIn              string
 		fEnfOut             string
 		fEnfDry             bool
@@ -251,9 +252,10 @@ func init() {
 			inPath := fEnrIn
 			outPath := fEnrOut
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-				InputPath:    inPath,
-				OutputPath:   outPath,
-				TaxonomyPath: fEnrTaxonomy,
+				InputPath:      inPath,
+				OutputPath:     outPath,
+				TaxonomyPath:   fEnrTaxonomy,
+				LegacyResolver: fEnrLegacy,
 			})
 			if err != nil {
 				return err
@@ -265,6 +267,7 @@ func init() {
 	cmdFinOpsEnr.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdFinOpsEnr.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
 	cmdFinOpsEnr.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
+	cmdFinOpsEnr.Flags().BoolVar(&fEnrLegacy, "legacy-resolver", false, "Map rows with the older two-way matcher instead of the attribution rules (docs/taxonomy-spec.md §6)")
 	RootCmd.AddCommand(cmdFinOpsEnr)
 
 	// 4. finops-enforce-tagging

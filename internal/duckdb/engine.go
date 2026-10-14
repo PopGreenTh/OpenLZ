@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PopGreenTh/OpenLZ/internal/attribution"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
 	duckdbDriver "github.com/marcboeker/go-duckdb"
 )
@@ -28,6 +29,15 @@ func NewEngine() (*Engine, error) {
 		return nil, fmt.Errorf("failed to initialize duckdb engine: %w", err)
 	}
 	return &Engine{db: db}, nil
+}
+
+// Attribute loads the node, evidence and line tables and runs the attribution query
+// (spec §6). The caller resolves distinct line combinations once and joins the result back.
+func (e *Engine) Attribute(ctx context.Context, nodes []attribution.Node, evidence []attribution.Evidence, lines []attribution.Line) ([]attribution.Result, error) {
+	if err := attribution.Load(ctx, e.db, nodes, evidence, lines); err != nil {
+		return nil, err
+	}
+	return attribution.Resolve(ctx, e.db)
 }
 
 // Close closes the DuckDB connection.
@@ -708,7 +718,7 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 		return nil, err
 	}
 	// Dimensions carried from sense to enrich. Older raw files without a column read as ''.
-	dims := []string{"primary_tag", "secondary_tag", "csp", "connection_id", "region", "zone", "usage_type", "resource_id"}
+	dims := []string{"primary_tag", "secondary_tag", "currency", "csp", "connection_id", "region", "zone", "usage_type", "resource_id"}
 	dimExprs := make([]string, len(dims))
 	for i, d := range dims {
 		if _, ok := cols[d]; ok {
@@ -891,6 +901,7 @@ type AnalyzedCostRow struct {
 	cloud.AnomalyRecord
 	PrimaryTag   string
 	SecondaryTag string
+	Currency     string
 	CSP          string
 	ConnectionID string
 	Region       string
@@ -910,10 +921,11 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 		ops_domain, account_id, account_name, service, resource_or_key, metric,
 		CAST(actual_value AS DOUBLE), CAST(expected_value AS DOUBLE), CAST(deviation_ratio AS DOUBLE),
 		severity, status, timestamp,
-		%s, %s, %s, %s, %s, %s, %s, %s
+		%s, %s, %s, %s, %s, %s, %s, %s, %s
 	FROM read_parquet('%s');`,
 		varcharOrEmpty(cols, "primary_tag"),
 		varcharOrEmpty(cols, "secondary_tag"),
+		varcharOrEmpty(cols, "currency"),
 		varcharOrEmpty(cols, "csp"),
 		varcharOrEmpty(cols, "connection_id"),
 		varcharOrEmpty(cols, "region"),
@@ -936,7 +948,7 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 			&row.ActualValue, &row.ExpectedValue, &row.Deviation,
 			&row.Severity, &row.Status, &row.Timestamp,
 			&row.PrimaryTag, &row.SecondaryTag,
-			&row.CSP, &row.ConnectionID, &row.Region, &row.Zone, &row.UsageType, &row.ResourceID,
+			&row.Currency, &row.CSP, &row.ConnectionID, &row.Region, &row.Zone, &row.UsageType, &row.ResourceID,
 		); err != nil {
 			return nil, err
 		}

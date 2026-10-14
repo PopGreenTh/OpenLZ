@@ -482,3 +482,20 @@ func TestLoadOptional(t *testing.T) {
 		t.Fatal("an explicit missing path must fail")
 	}
 }
+
+func TestResolveCloudDerivesNothingFromProjectOrBiz(t *testing.T) {
+	cat := sampleCatalog(t)
+	// Dedicated lake account in a region the taxonomy does not know: the legacy matcher walks
+	// account → app → environment → region, the cloud-only resolver must not.
+	in := Input{AccountID: "777788889999", Region: "eu-west-1", Project: "PRJ-PAYMENTS", App: "APP-ORDERS"}
+	out := cat.ResolveCloud(in)
+	if out.Region.ID != "" || out.Project != (Slot{}) || out.App != (Slot{}) || out.BusinessUnit != (Slot{}) {
+		t.Fatalf("cloud-only resolution must ignore tags and not climb to Project/Biz: %+v", out)
+	}
+	if out.LZ.ID != "LZ-MAIN" || out.Connection.ID != "100000000001" || out.BillingCurrency != "USD" || out.Account.ID != "777788889999" {
+		t.Fatalf("cloud side: %+v", out)
+	}
+	if legacy := cat.Resolve(in); legacy.Region.ID != "ap-southeast-1" {
+		t.Fatalf("the legacy matcher derives the region from the environment: %+v", legacy.Region)
+	}
+}

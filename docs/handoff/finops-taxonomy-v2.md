@@ -306,7 +306,7 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
   diff <(jq -S . /tmp/before.json) <(jq -S . taxonomy/taxonomy.json)   # only row order may differ
   ```
 
-### Task 2b: Wire the attribution resolver into Enrich
+### Task 2b: Wire the attribution resolver into Enrich  ✅ done
 `internal/attribution` is tested but stands alone. The current Enrich stage still uses `taxonomy.Catalog.Resolve`, which implements the older model.
 1. Build the three input tables from the data the pipeline already has: `node` from the taxonomy snapshot (every valid Project path prefix plus the Biz codes each level references, including system-generated `*-UNSPEC` nodes), `evidence` from the Cloud links, `lines` from the analyzed cost rows. Load them into the DuckDB engine and call `attribution.Resolve`.
 2. Distinct first: the tag-scoring step compares every line with every node. Resolve distinct (tags, account, region, resource group, resource) combinations once, then join the result back to the cost rows. Scale is untested.
@@ -315,6 +315,13 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
 5. The 3-hierarchy design is agreed (spec v3). The resolver assumes Environment is under App and a Project path of 5 levels, so do Task 0v3 first.
 
 Policy choices baked into the resolver (confirmed by the user 2026-10-14): the deepest valid tag (Environment, Feature or Function) wins over upper tags, and a corrected upper tag is flagged `tag-corrected`; LZ is used as evidence, as a last resort when nothing more specific is known; unresolved levels become `-UNSPEC` at every level, not only Feature/Function.
+
+**Implementation notes (as built).**
+- `taxonomy.Catalog.AttributionTables()` returns the node table (`ProjectNodes`, including `*-UNSPEC` nodes) and the evidence rows (resource override, resource group, account→App, region→Environment, LZ→Project). `attribution.Load` / `Engine.Attribute` load the tables into the engine and run the query. `internal/stages/finops/attribute.go` builds the lines and joins results back.
+- Distinct first: lines are deduplicated on (resource, resource group, account, region, LZ, Project tag, App tag) before the cross join. The Cloud side of each row comes from `Catalog.ResolveCloud`, which ignores tags and never climbs into the Project/Biz hierarchies, so a tag cannot leak into the evidence. Scale is still untested.
+- Enrich uses the attribution by default; `--legacy-resolver` (stage input `legacyResolver`) selects the older `Catalog.Resolve`. `attribution_trail` is written only in attribution mode. Analyze now also carries `currency`; Enrich logs rows whose currency differs from their LZ's, and Region/Zone mismatches.
+- **Limit:** a raw row carries two sensed tags (`primary_tag`, `secondary_tag` → Project, App). Environment, Feature, Function and Biz tags cannot reach the attribution yet, so only reference cases 7, 8, 10, 12 and 13 run end to end (`enrich_reference_test.go`); all 13 run against the SQL in `internal/attribution`.
+- Mock pipeline vs legacy (3 accounts): attribution gives Project/App for all rows and leaves Environment `ENV-UNSPEC` where the Region links do not decide (the old Account→Environment link no longer exists in the model); the legacy resolver filled Environment and OwnerTeam through account→app→only-environment narrowing. Biz levels below an unspecified Environment are `TEAM-UNSPEC` by design.
 
 PostgreSQL: the same query can back a Directus audit view. Run `attribution.SQL()` output with `psql -f` after creating the tables from `attribution.Schema`; it uses `AS MATERIALIZED`, so it needs PostgreSQL 12+.
 

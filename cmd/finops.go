@@ -34,6 +34,7 @@ var (
 	finopsAnomPath         string
 	finopsEnrichPath       string
 	finopsTaxonomy         string
+	finopsLegacyResolver   bool
 	finopsAuditPath        string
 	finopsThreshold        float64
 	finopsDryRun           bool
@@ -146,9 +147,10 @@ var finopsEnrichCmd = &cobra.Command{
 		enrichPath := finopsEnrichPath
 
 		res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-			InputPath:    anomPath,
-			OutputPath:   enrichPath,
-			TaxonomyPath: finopsTaxonomy,
+			InputPath:      anomPath,
+			OutputPath:     enrichPath,
+			TaxonomyPath:   finopsTaxonomy,
+			LegacyResolver: finopsLegacyResolver,
 		})
 		if err != nil {
 			return err
@@ -283,6 +285,7 @@ func init() {
 	finopsEnrichCmd.Flags().StringVar(&finopsAnomPath, "input", "data/finops_anomalies.parquet", "Input anomalies parquet file path")
 	finopsEnrichCmd.Flags().StringVar(&finopsEnrichPath, "output", "data/finops_enriched.parquet", "Output enriched parquet file path")
 	finopsEnrichCmd.Flags().StringVar(&finopsTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
+	finopsEnrichCmd.Flags().BoolVar(&finopsLegacyResolver, "legacy-resolver", false, "Map rows with the older two-way matcher instead of the attribution rules (docs/taxonomy-spec.md §6)")
 
 	// Flags for enforce
 	finopsEnforceCmd.Flags().StringVar(&finopsEnrichPath, "input", "data/finops_enriched.parquet", "Input enriched parquet file path")
