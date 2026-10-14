@@ -80,7 +80,7 @@ in
 `, escapedPath)
 }
 
-// GenerateRawFinOpsParquetMScript produces Power Query M-code for the 17-column normalized raw FinOps Parquet dataset.
+// GenerateRawFinOpsParquetMScript produces Power Query M-code for the 19-column normalized raw FinOps Parquet dataset.
 func GenerateRawFinOpsParquetMScript(parquetFilePath string) string {
 	escapedPath := resolveEscapedAbsPath(parquetFilePath)
 	return fmt.Sprintf(`// OpenLZ Raw FinOps Power Query M-Formula (Parquet Source)
@@ -101,8 +101,10 @@ let
         {"frequency", type text},
         {"unit", type text},
         {"currency", type text},
+        {"csp", type text},
         {"region", type text},
         {"usage_type", type text},
+        {"resource_id", type text},
         {"primary_tag", type text},
         {"secondary_tag", type text},
         {"recorded_at", type datetime}
@@ -112,14 +114,14 @@ in
 `, escapedPath)
 }
 
-// GenerateRawFinOpsCsvMScript produces Power Query M-code for the 17-column normalized raw FinOps CSV dataset.
+// GenerateRawFinOpsCsvMScript produces Power Query M-code for the 19-column normalized raw FinOps CSV dataset.
 func GenerateRawFinOpsCsvMScript(csvFilePath string) string {
 	escapedPath := resolveEscapedAbsPath(csvFilePath)
 	return fmt.Sprintf(`// OpenLZ Raw FinOps Power Query M-Formula for Excel & Power BI (CSV Source)
 // 1. Open Excel or Power BI Desktop -> Data -> Get Data -> Blank Query
 // 2. Open "Advanced Editor" and replace existing code with this snippet:
 let
-    Source = Csv.Document(File.Contents("%s"),[Delimiter=",", Columns=17, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    Source = Csv.Document(File.Contents("%s"),[Delimiter=",", Columns=19, Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
     #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
     #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{
         {"account_id", type text},
@@ -134,8 +136,10 @@ let
         {"frequency", type text},
         {"unit", type text},
         {"currency", type text},
+        {"csp", type text},
         {"region", type text},
         {"usage_type", type text},
+        {"resource_id", type text},
         {"primary_tag", type text},
         {"secondary_tag", type text},
         {"recorded_at", type datetime}

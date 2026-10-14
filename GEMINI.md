@@ -44,16 +44,16 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - `MONTHLY`: `DailyAmount = Amount / DaysInPeriod` (`DaysInPeriod` is the number of days in the month, or elapsed days for partial active months).
 - Both raw `Amount` and comparable `DailyAmount` must be persisted in DuckDB Parquet.
 
-### 5. Multi-Tenancy by File Name Separation
-- Partitions datasets and taxonomies via suffix filename separation:
-  - `taxonomy/project_taxonomy_<tenant>.json` / `taxonomy/business_taxonomy_<tenant>.json`
-  - `data/finops_raw_<tenant>.parquet`, `data/secops_raw_<tenant>.parquet`, etc.
-- **Shared Identity Invariants ("must behave")**:
-  - `ProjectID/Name` must match `BusinessUnitID/Name`
-  - `AppID/Name` must match `OwnerID/Name`
-  - `EnvironmentID/Name` must match `CostCenterID/Name`
-- When `--tenant` is omitted, retain default paths (`taxonomy/project_taxonomy.json`, `data/finops_raw.parquet`) for backward compatibility.
-- Visual taxonomy editing supported via Directus (`directus/docker-compose.yml`, `task directus:up`).
+### 5. Cost Taxonomy & Multi-Tenancy
+- **Hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
+  - Biz: `BusinessUnit → CostCenter → Owner → CustomerFunc`
+  - Project: `Project → App → Environment/Account → CSP/Region → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource`
+- **Relations**: Project *must ref* BusinessUnit; App *must ref* CostCenter; ResourceGroup *can ref* CustomerFunc; Region (unique within its CSP), Account, Service, Usage and Resource *can be mapped* to their group level.
+- The old "must behave" identity rules (Project = BU, App = Owner, Env = CostCenter) are **removed**. Do not reintroduce them.
+- One flat JSON snapshot per tenant: `taxonomy/taxonomy.json` (tenant `default`) and `taxonomy/taxonomy_<tenant>.json`. Data files keep the suffix pattern `data/finops_raw_<tenant>.parquet`.
+- **Directus is the editing source of truth** (one instance, a `tenant` field on every row); `openlz taxonomy pull` writes the JSON that Enrich reads offline.
+
+> **Work in progress:** see `docs/handoff/finops-taxonomy-v2.md` for what is done, the remaining tasks (Directus bootstrap/pull/push, reports, docs) and open questions. Read it before you change taxonomy, enrich or Directus code.
 
 ---
 
@@ -76,11 +76,9 @@ OpenLZ/
 ├── directus/               # Directus Headless CMS (Docker Compose, PostgreSQL backend)
 │   ├── docker-compose.yml  # Directus container specification
 │   └── README.md           # Visual taxonomy editing instructions
-├── taxonomy/               # Project and Business cost hierarchy JSON files
-│   ├── project_taxonomy.json
-│   ├── business_taxonomy.json
-│   ├── project_taxonomy_<tenant>.json
-│   └── business_taxonomy_<tenant>.json
+├── taxonomy/               # Cost taxonomy snapshots (pulled from Directus)
+│   ├── taxonomy.json       # default tenant
+│   └── taxonomy_<tenant>.json
 ├── internal/
 │   ├── aws/
 │   │   ├── client.go       # Lean AWS SDK client & retries
@@ -97,7 +95,7 @@ OpenLZ/
 │   │   ├── finops/         # sense_costexplorer.go, sense_costanomaly.go, analyze, etc.
 │   │   ├── secops/         # sense_vulner.go, sense_posture.go, etc.
 │   │   └── cloudops/       # sense_hygiene.go, etc.
-│   ├── taxonomy/           # Cost hierarchy loader, validation & multi-tenant path resolver
+│   ├── taxonomy/           # Taxonomy Schema, snapshot JSON, validation, Resolve, tenant paths
 │   └── workflow/           # Multi-account concurrent scanner (errgroup)
 ├── ARCHITECTURE.md         # Full technical architecture specification
 ├── Taskfile.yml            # Task runner workflow definitions
@@ -134,8 +132,8 @@ OpenLZ/
 ## 6. Development & Verification Commands
 
 ```powershell
-# Run all tests
-go test ./...
+# Run all tests (always use the no_duckdb_arrow tag)
+go test -tags=no_duckdb_arrow ./...
 
 # Run finops stage unit tests with verbose logging
 go test -v ./internal/stages/finops/...
