@@ -28,7 +28,6 @@ var (
 	cloudopsAppendTS     bool
 	cloudopsAppendOutput bool
 	cloudopsUpsert       bool
-	cloudopsTenant       string
 )
 
 var cloudopsCmd = &cobra.Command{
@@ -42,14 +41,7 @@ var cloudopsSenseCmd = &cobra.Command{
 	Short: "Stage 1: Scan AWS operational hygiene concurrently into DuckDB raw.parquet",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := cloudopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := cloudopsRawPath
-		if !cmd.Flags().Changed("output") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 
 		var accounts []string
 		if cloudopsAccounts != "" {
@@ -63,7 +55,6 @@ var cloudopsSenseCmd = &cobra.Command{
 			AppendOutput:    cloudopsAppendOutput || cloudopsUpsert,
 			Upsert:          cloudopsAppendOutput || cloudopsUpsert,
 			Mock:            cloudopsMock,
-			Tenant:          tenant,
 		})
 		if err != nil {
 			return err
@@ -78,23 +69,12 @@ var cloudopsAnalyzeCmd = &cobra.Command{
 	Short: "Stage 2: Run DuckDB OLAP queries to calculate operational waste and stale assets",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := cloudopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := cloudopsRawPath
-		if !cmd.Flags().Changed("input") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 		anomPath := cloudopsAnomPath
-		if !cmd.Flags().Changed("output") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 
 		res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
 			InputPath:  rawPath,
 			OutputPath: anomPath,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -109,23 +89,12 @@ var cloudopsEnrichCmd = &cobra.Command{
 	Short: "Stage 3: Annotate waste findings with environment and lifecycle metadata",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := cloudopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		anomPath := cloudopsAnomPath
-		if !cmd.Flags().Changed("input") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 		enrichPath := cloudopsEnrichPath
-		if !cmd.Flags().Changed("output") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
 			InputPath:  anomPath,
 			OutputPath: enrichPath,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -140,24 +109,13 @@ var cloudopsEnforceCmd = &cobra.Command{
 	Short: "Stage 4: Execute cleanup and asset remediation policies",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := cloudopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := cloudopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 		auditPath := cloudopsAuditPath
-		if !cmd.Flags().Changed("output") {
-			auditPath = types.AppendTenantToPath(auditPath, tenant)
-		}
 
 		res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
 			InputPath:  enrichPath,
 			OutputPath: auditPath,
 			DryRun:     cloudopsDryRun,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -172,14 +130,7 @@ var cloudopsReportCmd = &cobra.Command{
 	Short: "Stage 5: Generate CloudOps reports (table, markdown, powerbi, excel, serve)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := cloudopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := cloudopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		engine, err := duckdb.NewEngine()
 		if err != nil {
@@ -246,7 +197,6 @@ var cloudopsReportCmd = &cobra.Command{
 }
 
 func init() {
-	cloudopsCmd.PersistentFlags().StringVar(&cloudopsTenant, "tenant", "", "Tenant ID or name for multi-tenant isolation")
 
 	// Flags for sense
 	cloudopsSenseCmd.Flags().StringVar(&cloudopsAccounts, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")

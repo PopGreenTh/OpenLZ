@@ -44,20 +44,20 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - `MONTHLY`: `DailyAmount = Amount / DaysInPeriod` (`DaysInPeriod` is the number of days in the month, or elapsed days for partial active months).
 - Both raw `Amount` and comparable `DailyAmount` must be persisted in DuckDB Parquet.
 
-### 5. Cost Taxonomy & Multi-Tenancy
-> **Authoritative spec: `docs/taxonomy-spec.md`.** The summary below describes the current code; the
-> spec adds OwnerTeam, ProductLine, LZ/Connection and Code naming, and **OpenLZ is now single-tenant**:
-> the Tenant level and all `--tenant` support are being removed (handoff Task 0). Don't add new tenant code.
+### 5. Cost Taxonomy
+> **Authoritative spec: `docs/taxonomy-spec.md` (v3).** OpenLZ is **single-tenant**: there is no Tenant level and no `--tenant` flag. Don't add tenant code.
 
-- **Hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
-  - Biz: `BusinessUnit → CostCenter → Owner → CustomerFunc`
-  - Project: `Project → App → Environment/Account → CSP/Region → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource`
-- **Relations**: Project *must ref* BusinessUnit; App *must ref* CostCenter; ResourceGroup *can ref* CustomerFunc; Region (unique within its CSP), Account, Service, Usage and Resource *can be mapped* to their group level; Resource *can be mapped* to Environment.
-- **App ↔ Environment is many-to-many** (junction collection `app_environments`): an App can run in several Environments and an Environment can host several Apps.
-- **Matching is two-way** (`Catalog.Resolve`): bottom-up from the row's resource/account, and top-down plus candidate intersection from known levels. See the handoff doc §2 for the exact rules.
-- The old "must behave" identity rules (Project = BU, App = Owner, Env = CostCenter) are **removed**. Do not reintroduce them.
-- One flat JSON snapshot per tenant: `taxonomy/taxonomy.json` (tenant `default`) and `taxonomy/taxonomy_<tenant>.json`. Data files keep the suffix pattern `data/finops_raw_<tenant>.parquet`.
-- **Directus is the editing source of truth** (one instance, a `tenant` field on every row); `openlz taxonomy pull` writes the JSON that Enrich reads offline.
+- **Three hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
+  - **Biz** (who pays): `BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer`
+  - **Project** (what we build): `Project → App → Environment → Feature → Function`
+  - **Cloud** (where it runs): `LZ/Connection → Account → Region/Zone → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource`. CSP and currency are attributes of the LZ (CSP also of Region), not levels.
+- **Project → Biz, one level for one level:** Project *must ref* BusinessUnit; App *must ref* CostCenter; Environment *can ref* OwnerTeam; Feature *can ref* ProductLine; Function *can ref* Customer. The refs along a Project path must form a valid Biz path (a `Build` warning otherwise).
+- **Cloud ↔ Project links** are many-to-many junctions: `project_lzs`, `app_accounts`, `environment_regions`. A Resource or ResourceGroup can be mapped to a Project path (`project_path`, e.g. `|PRJ|APP|ENV|`).
+- **Codes.** Every row has a Code (the business key; `"id"` is still read as an alias) and a Name. Environment, Feature and Function codes are unique only within their parent, so references to them use the path hash when the code repeats.
+- **System nodes** `<LEVEL>-UNSPEC` / `<LEVEL>-UNALLOC` are generated, never edited or pushed.
+- Attribution rules (spec §6) live in `internal/attribution`; `taxonomy.Catalog.Resolve` is the older two-way matcher.
+- One flat JSON snapshot, `taxonomy/taxonomy.json`. Data files are `data/<domain>_<stage>.parquet`.
+- **Directus is the editing source of truth**; `openlz taxonomy pull` (Task 1, not built yet) writes the JSON that Enrich reads offline.
 
 > **Work in progress:** see `docs/handoff/finops-taxonomy-v2.md` for what is done, the remaining tasks (Directus bootstrap/pull/push, reports, docs) and the product decisions. Read it before you change taxonomy, enrich or Directus code.
 
@@ -75,16 +75,15 @@ OpenLZ/
 │   ├── cloudops.go         # openlz cloudops subcommands
 │   ├── stages.go           # Granular stage-level commands (finops-sense-costexplorer, etc.)
 │   ├── report.go           # Multi-format report generators & HTTP REST server
-│   ├── taxonomy.go         # openlz taxonomy subcommands (list, validate, init)
+│   ├── taxonomy.go         # openlz taxonomy subcommands (validate, init)
 │   ├── openlz-finops/      # Standalone FinOps binary entrypoint (main.go)
 │   ├── openlz-secops/      # Standalone SecOps binary entrypoint (main.go)
 │   └── openlz-cloudops/    # Standalone CloudOps binary entrypoint (main.go)
 ├── directus/               # Directus Headless CMS (Docker Compose, PostgreSQL backend)
 │   ├── docker-compose.yml  # Directus container specification
 │   └── README.md           # Visual taxonomy editing instructions
-├── taxonomy/               # Cost taxonomy snapshots (pulled from Directus)
-│   ├── taxonomy.json       # default tenant
-│   └── taxonomy_<tenant>.json
+├── taxonomy/               # Cost taxonomy snapshot (pulled from Directus)
+│   └── taxonomy.json
 ├── internal/
 │   ├── aws/
 │   │   ├── client.go       # Lean AWS SDK client & retries
@@ -101,7 +100,7 @@ OpenLZ/
 │   │   ├── finops/         # sense_costexplorer.go, sense_costanomaly.go, analyze, etc.
 │   │   ├── secops/         # sense_vulner.go, sense_posture.go, etc.
 │   │   └── cloudops/       # sense_hygiene.go, etc.
-│   ├── taxonomy/           # Taxonomy Schema, snapshot JSON, validation, Resolve, tenant paths
+│   ├── taxonomy/           # Taxonomy Schema, snapshot JSON, validation, system nodes, legacy Resolve
 │   └── workflow/           # Multi-account concurrent scanner (errgroup)
 ├── ARCHITECTURE.md         # Full technical architecture specification
 ├── Taskfile.yml            # Task runner workflow definitions

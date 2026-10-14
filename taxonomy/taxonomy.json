@@ -1,98 +1,126 @@
 {
-  "tenant": "default",
   "business_units": [
-    {"id": "BU-DIGITAL", "name": "Digital"},
-    {"id": "BU-DATA", "name": "Data & Analytics"}
+    {"code": "BU-DIGITAL", "name": "Digital"},
+    {"code": "BU-DATA", "name": "Data & Analytics"}
   ],
   "cost_centers": [
-    {"id": "CC-PAY", "name": "Payments", "business_unit": "BU-DIGITAL"},
-    {"id": "CC-CORE", "name": "Core Platform", "business_unit": "BU-DIGITAL"},
-    {"id": "CC-DATA", "name": "Data Platform", "business_unit": "BU-DATA"}
+    {"code": "CC-PAY", "name": "Payments", "business_unit": "BU-DIGITAL"},
+    {"code": "CC-CORE", "name": "Core Platform", "business_unit": "BU-DIGITAL"},
+    {"code": "CC-DATA", "name": "Data Platform", "business_unit": "BU-DATA"}
   ],
-  "owners": [
-    {"id": "OWN-PAY", "name": "Payments Team", "cost_center": "CC-PAY"},
-    {"id": "OWN-PLATFORM", "name": "Platform Engineering", "cost_center": "CC-CORE"},
-    {"id": "OWN-DATA", "name": "Data Engineering", "cost_center": "CC-DATA"}
+  "owner_teams": [
+    {"code": "TEAM-PAY", "name": "Payments Team", "cost_center": "CC-PAY"},
+    {"code": "TEAM-PLATFORM", "name": "Platform Engineering", "cost_center": "CC-CORE"},
+    {"code": "TEAM-DATA", "name": "Data Engineering", "cost_center": "CC-DATA"}
   ],
-  "customer_funcs": [
-    {"id": "CF-CHECKOUT", "name": "Checkout", "owner": "OWN-PAY"},
-    {"id": "CF-ORDERS", "name": "Order Processing", "owner": "OWN-PAY"},
-    {"id": "CF-OBSERVABILITY", "name": "Observability", "owner": "OWN-PLATFORM"},
-    {"id": "CF-LAKE", "name": "Lakehouse", "owner": "OWN-DATA"}
+  "product_lines": [
+    {"code": "PL-CHECKOUT", "name": "Checkout", "owner_team": "TEAM-PAY"},
+    {"code": "PL-ORDERS", "name": "Order Processing", "owner_team": "TEAM-PAY"},
+    {"code": "PL-LAKE", "name": "Lakehouse", "owner_team": "TEAM-DATA"}
+  ],
+  "customers": [
+    {"code": "CUST-RETAIL", "name": "Retail Shoppers", "product_line": "PL-CHECKOUT"},
+    {"code": "CUST-MERCHANT", "name": "Merchants", "product_line": "PL-ORDERS"},
+    {"code": "CUST-ANALYST", "name": "Data Analysts", "product_line": "PL-LAKE"}
   ],
   "projects": [
-    {"id": "PRJ-PAYMENTS", "name": "Payments Platform", "business_unit": "BU-DIGITAL"},
-    {"id": "PRJ-LAKEHOUSE", "name": "Lakehouse", "business_unit": "BU-DATA"}
+    {"code": "PRJ-PAYMENTS", "name": "Payments Platform", "business_unit": "BU-DIGITAL"},
+    {"code": "PRJ-LAKEHOUSE", "name": "Lakehouse", "business_unit": "BU-DATA"}
   ],
   "apps": [
-    {"id": "APP-GATEWAY", "name": "Payment Gateway", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"},
-    {"id": "APP-ORDERS", "name": "Order Processor", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"},
-    {"id": "APP-LAKE", "name": "Data Lakehouse", "project": "PRJ-LAKEHOUSE", "cost_center": "CC-DATA"}
+    {"code": "APP-GATEWAY", "name": "Payment Gateway", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"},
+    {"code": "APP-ORDERS", "name": "Order Processor", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"},
+    {"code": "APP-LAKE", "name": "Data Lakehouse", "project": "PRJ-LAKEHOUSE", "cost_center": "CC-DATA"}
   ],
   "environments": [
-    {"id": "ENV-PAY-PROD", "name": "Production"},
-    {"id": "ENV-PAY-STG", "name": "Staging"},
-    {"id": "ENV-LAKE-PROD", "name": "Production"}
+    {"code": "ENV-PROD", "name": "Production", "app": "APP-GATEWAY", "owner_team": "TEAM-PAY"},
+    {"code": "ENV-STG", "name": "Staging", "app": "APP-GATEWAY", "owner_team": "TEAM-PAY"},
+    {"code": "ENV-PROD", "name": "Production", "app": "APP-ORDERS", "owner_team": "TEAM-PAY"},
+    {"code": "ENV-PROD", "name": "Production", "app": "APP-LAKE", "owner_team": "TEAM-DATA"}
   ],
-  "app_environments": [
-    {"environment": "ENV-PAY-PROD", "app": "APP-GATEWAY"},
-    {"environment": "ENV-PAY-STG", "app": "APP-GATEWAY"},
-    {"environment": "ENV-PAY-PROD", "app": "APP-ORDERS"},
-    {"environment": "ENV-LAKE-PROD", "app": "APP-LAKE"}
+  "features": [
+    {"code": "FEAT-CARD", "name": "Card Payments", "environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|", "product_line": "PL-CHECKOUT"}
+  ],
+  "functions": [
+    {"code": "FUNC-AUTH", "name": "Card Authorization", "feature": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|FEAT-CARD|", "customer": "CUST-RETAIL"}
+  ],
+  "landing_zones": [
+    {"code": "LZ-MAIN", "name": "Main AWS Organization", "csp": "AWS", "currency": "USD"}
+  ],
+  "connections": [
+    {"code": "100000000001", "name": "Main payer account", "landing_zone": "LZ-MAIN"}
   ],
   "accounts": [
-    {"id": "111122223333", "name": "lz-prod-payments", "environment": "ENV-PAY-PROD"},
-    {"id": "444455556666", "name": "lz-stg-payments", "environment": "ENV-PAY-STG"},
-    {"id": "777788889999", "name": "lz-prod-data", "environment": "ENV-LAKE-PROD"}
-  ],
-  "csps": [
-    {"id": "AWS", "name": "Amazon Web Services"}
+    {"code": "111122223333", "name": "lz-prod-payments", "connection": "100000000001"},
+    {"code": "444455556666", "name": "lz-stg-payments", "connection": "100000000001"},
+    {"code": "777788889999", "name": "lz-prod-data", "connection": "100000000001"}
   ],
   "regions": [
-    {"id": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"},
-    {"id": "us-east-1", "name": "US East (N. Virginia)", "csp": "AWS"}
+    {"code": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"},
+    {"code": "us-east-1", "name": "US East (N. Virginia)", "csp": "AWS"}
+  ],
+  "zones": [
+    {"code": "ap-southeast-1a", "name": "Singapore AZ a", "region": "ap-southeast-1"},
+    {"code": "ap-southeast-1b", "name": "Singapore AZ b", "region": "ap-southeast-1"},
+    {"code": "us-east-1a", "name": "N. Virginia AZ a", "region": "us-east-1"}
   ],
   "service_cats": [
-    {"id": "SC-COMPUTE", "name": "Compute"},
-    {"id": "SC-STORAGE", "name": "Storage"},
-    {"id": "SC-DATABASE", "name": "Database"},
-    {"id": "SC-SERVERLESS", "name": "Serverless"},
-    {"id": "SC-MONITORING", "name": "Monitoring"}
+    {"code": "SC-COMPUTE", "name": "Compute"},
+    {"code": "SC-STORAGE", "name": "Storage"},
+    {"code": "SC-DATABASE", "name": "Database"},
+    {"code": "SC-SERVERLESS", "name": "Serverless"},
+    {"code": "SC-MONITORING", "name": "Monitoring"}
   ],
   "services": [
-    {"id": "AmazonEC2", "name": "Amazon Elastic Compute Cloud - Compute", "service_cat": "SC-COMPUTE"},
-    {"id": "AmazonS3", "name": "Amazon Simple Storage Service", "service_cat": "SC-STORAGE"},
-    {"id": "AmazonRDS", "name": "Amazon Relational Database Service", "service_cat": "SC-DATABASE"},
-    {"id": "AmazonDynamoDB", "name": "Amazon DynamoDB", "service_cat": "SC-DATABASE"},
-    {"id": "AWSLambda", "name": "AWS Lambda", "service_cat": "SC-SERVERLESS"},
-    {"id": "AmazonCloudWatch", "name": "Amazon CloudWatch", "service_cat": "SC-MONITORING"}
+    {"code": "AmazonEC2", "name": "Amazon Elastic Compute Cloud - Compute", "service_cat": "SC-COMPUTE"},
+    {"code": "AmazonS3", "name": "Amazon Simple Storage Service", "service_cat": "SC-STORAGE"},
+    {"code": "AmazonRDS", "name": "Amazon Relational Database Service", "service_cat": "SC-DATABASE"},
+    {"code": "AmazonDynamoDB", "name": "Amazon DynamoDB", "service_cat": "SC-DATABASE"},
+    {"code": "AWSLambda", "name": "AWS Lambda", "service_cat": "SC-SERVERLESS"},
+    {"code": "AmazonCloudWatch", "name": "Amazon CloudWatch", "service_cat": "SC-MONITORING"}
   ],
   "service_usages": [
-    {"id": "SU-EC2-INSTANCE", "name": "EC2 Instance Hours", "service": "AmazonEC2"},
-    {"id": "SU-S3-STORAGE", "name": "S3 Storage", "service": "AmazonS3"},
-    {"id": "SU-RDS-INSTANCE", "name": "RDS Instance Hours", "service": "AmazonRDS"},
-    {"id": "SU-DDB-REQUESTS", "name": "DynamoDB Requests", "service": "AmazonDynamoDB"},
-    {"id": "SU-LAMBDA-REQUESTS", "name": "Lambda Requests", "service": "AWSLambda"},
-    {"id": "SU-CW-METRICS", "name": "CloudWatch Metrics", "service": "AmazonCloudWatch"}
+    {"code": "SU-EC2-INSTANCE", "name": "EC2 Instance Hours", "service": "AmazonEC2"},
+    {"code": "SU-S3-STORAGE", "name": "S3 Storage", "service": "AmazonS3"},
+    {"code": "SU-RDS-INSTANCE", "name": "RDS Instance Hours", "service": "AmazonRDS"},
+    {"code": "SU-DDB-REQUESTS", "name": "DynamoDB Requests", "service": "AmazonDynamoDB"},
+    {"code": "SU-LAMBDA-REQUESTS", "name": "Lambda Requests", "service": "AWSLambda"},
+    {"code": "SU-CW-METRICS", "name": "CloudWatch Metrics", "service": "AmazonCloudWatch"}
   ],
   "usages": [
-    {"id": "BoxUsage:t3.medium", "name": "t3.medium instance hours", "service_usage": "SU-EC2-INSTANCE"},
-    {"id": "TimedStorage-ByteHrs", "name": "S3 Standard storage", "service_usage": "SU-S3-STORAGE"},
-    {"id": "InstanceUsage:db.r5.large", "name": "db.r5.large instance hours", "service_usage": "SU-RDS-INSTANCE"},
-    {"id": "ReadRequestUnits", "name": "DynamoDB read request units", "service_usage": "SU-DDB-REQUESTS"},
-    {"id": "Invocations", "name": "Lambda invocations", "service_usage": "SU-LAMBDA-REQUESTS"},
-    {"id": "MetricMonitorUsage", "name": "CloudWatch custom metrics", "service_usage": "SU-CW-METRICS"}
+    {"code": "BoxUsage:t3.medium", "name": "t3.medium instance hours", "service_usage": "SU-EC2-INSTANCE"},
+    {"code": "TimedStorage-ByteHrs", "name": "S3 Standard storage", "service_usage": "SU-S3-STORAGE"},
+    {"code": "InstanceUsage:db.r5.large", "name": "db.r5.large instance hours", "service_usage": "SU-RDS-INSTANCE"},
+    {"code": "ReadRequestUnits", "name": "DynamoDB read request units", "service_usage": "SU-DDB-REQUESTS"},
+    {"code": "Invocations", "name": "Lambda invocations", "service_usage": "SU-LAMBDA-REQUESTS"},
+    {"code": "MetricMonitorUsage", "name": "CloudWatch custom metrics", "service_usage": "SU-CW-METRICS"}
   ],
   "resource_groups": [
-    {"id": "RG-CHECKOUT", "name": "Checkout Compute", "customer_func": "CF-CHECKOUT"},
-    {"id": "RG-ORDERS", "name": "Order Functions", "customer_func": "CF-ORDERS"},
-    {"id": "RG-LAKE", "name": "Lakehouse Storage", "customer_func": "CF-LAKE"}
+    {"code": "RG-CHECKOUT", "name": "Checkout Compute", "project_path": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|FEAT-CARD|"},
+    {"code": "RG-ORDERS", "name": "Order Functions", "project_path": "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|"},
+    {"code": "RG-LAKE", "name": "Lakehouse Storage", "project_path": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"}
   ],
   "resources": [
-    {"id": "i-0111122223333a001", "name": "checkout-node-1", "resource_group": "RG-CHECKOUT", "environment": "ENV-PAY-PROD"},
-    {"id": "i-0444455556666a001", "name": "checkout-staging-node-1", "resource_group": "RG-CHECKOUT", "environment": "ENV-PAY-STG"},
-    {"id": "arn:aws:lambda:ap-southeast-1:111122223333:function:order-processor", "name": "order-processor", "resource_group": "RG-ORDERS", "environment": "ENV-PAY-PROD"},
-    {"id": "arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "name": "inventory-db-staging", "environment": "ENV-PAY-STG"},
-    {"id": "arn:aws:s3:::lz-777788889999-datalake", "name": "datalake bucket", "resource_group": "RG-LAKE", "environment": "ENV-LAKE-PROD"}
+    {"code": "i-0111122223333a001", "name": "checkout-node-1", "resource_group": "RG-CHECKOUT"},
+    {"code": "i-0444455556666a001", "name": "checkout-staging-node-1", "resource_group": "RG-CHECKOUT", "project_path": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|"},
+    {"code": "arn:aws:lambda:ap-southeast-1:111122223333:function:order-processor", "name": "order-processor", "resource_group": "RG-ORDERS"},
+    {"code": "arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "name": "inventory-db-staging", "project_path": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|"},
+    {"code": "arn:aws:s3:::lz-777788889999-datalake", "name": "datalake bucket", "resource_group": "RG-LAKE"}
+  ],
+  "project_lzs": [
+    {"project": "PRJ-PAYMENTS", "landing_zone": "LZ-MAIN"},
+    {"project": "PRJ-LAKEHOUSE", "landing_zone": "LZ-MAIN"}
+  ],
+  "app_accounts": [
+    {"account": "111122223333", "app": "APP-GATEWAY"},
+    {"account": "111122223333", "app": "APP-ORDERS"},
+    {"account": "444455556666", "app": "APP-GATEWAY"},
+    {"account": "777788889999", "app": "APP-LAKE"}
+  ],
+  "environment_regions": [
+    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|", "region": "us-east-1"}
   ]
 }

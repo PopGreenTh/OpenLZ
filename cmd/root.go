@@ -13,7 +13,6 @@ var (
 	cacheDBPath string
 	verbose     bool
 	logLevel    string
-	rootTenant  string
 )
 
 // RootCmd is the base command for OpenLZ.
@@ -42,7 +41,6 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cacheDBPath, "cache-db", "openlz_cache.duckdb", "Path to persistent DuckDB cache file")
 	RootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	RootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	RootCmd.PersistentFlags().StringVar(&rootTenant, "tenant", "", "Tenant identifier for multi-tenant file separation")
 
 	RootCmd.AddCommand(finopsCmd)
 	RootCmd.AddCommand(secopsCmd)

@@ -7,7 +7,6 @@ import (
 	cloudopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/cloudops"
 	finopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/finops"
 	secopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/secops"
-	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +17,6 @@ var (
 	pipeSkipEnforce  bool
 	pipeDryRun       bool
 	pipeMock         bool
-	pipeTenant       string
 )
 
 var pipelineCmd = &cobra.Command{
@@ -28,17 +26,8 @@ var pipelineCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		tenant := pipeTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
-
 		fmt.Println("=========================================================")
-		if tenant != "" {
-			fmt.Printf(" Starting OpenLZ Zero-ETL Pipeline (Tenant: %s)\n", tenant)
-		} else {
-			fmt.Println(" Starting OpenLZ Zero-ETL 5-Stage Multi-Ops Pipeline")
-		}
+		fmt.Println(" Starting OpenLZ Zero-ETL 5-Stage Multi-Ops Pipeline")
 		fmt.Println("=========================================================")
 
 		accounts := []string{"111122223333", "444455556666", "777788889999"}
@@ -46,10 +35,10 @@ var pipelineCmd = &cobra.Command{
 		// 1. FinOps Pipeline
 		if !pipeSkipFinOps {
 			fmt.Println("\n>>> [Pipeline: FinOps Domain] <<<")
-			rawP := types.AppendTenantToPath("data/finops_raw.parquet", tenant)
-			anomP := types.AppendTenantToPath("data/finops_anomalies.parquet", tenant)
-			enrichP := types.AppendTenantToPath("data/finops_enriched.parquet", tenant)
-			auditP := types.AppendTenantToPath("data/finops_audit.parquet", tenant)
+			rawP := "data/finops_raw.parquet"
+			anomP := "data/finops_anomalies.parquet"
+			enrichP := "data/finops_enriched.parquet"
+			auditP := "data/finops_audit.parquet"
 
 			fmt.Println(" (1/5) Sense: Concurrently querying Cost Explorer...")
 			if _, err := finopsstages.ExecuteSenseCostExplorer(ctx, finopsstages.SenseCostExplorerInput{
@@ -58,7 +47,6 @@ var pipelineCmd = &cobra.Command{
 				AppendOutput: true,
 				CacheDBPath:  cacheDBPath,
 				Mock:         pipeMock,
-				Tenant:       tenant,
 			}); err != nil {
 				return err
 			}
@@ -68,7 +56,6 @@ var pipelineCmd = &cobra.Command{
 				InputPath:  rawP,
 				OutputPath: anomP,
 				Threshold:  1.3,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -77,7 +64,6 @@ var pipelineCmd = &cobra.Command{
 			if _, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
 				InputPath:  anomP,
 				OutputPath: enrichP,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -88,7 +74,6 @@ var pipelineCmd = &cobra.Command{
 					InputPath:  enrichP,
 					OutputPath: auditP,
 					DryRun:     pipeDryRun,
-					Tenant:     tenant,
 				}); err != nil {
 					return err
 				}
@@ -100,10 +85,10 @@ var pipelineCmd = &cobra.Command{
 		// 2. SecOps Pipeline
 		if !pipeSkipSecOps {
 			fmt.Println("\n>>> [Pipeline: SecOps Domain] <<<")
-			rawP := types.AppendTenantToPath("data/secops_raw.parquet", tenant)
-			anomP := types.AppendTenantToPath("data/secops_anomalies.parquet", tenant)
-			enrichP := types.AppendTenantToPath("data/secops_enriched.parquet", tenant)
-			auditP := types.AppendTenantToPath("data/secops_audit.parquet", tenant)
+			rawP := "data/secops_raw.parquet"
+			anomP := "data/secops_anomalies.parquet"
+			enrichP := "data/secops_enriched.parquet"
+			auditP := "data/secops_audit.parquet"
 
 			fmt.Println(" (1/5) Sense: Scanning security posture...")
 			if _, err := secopsstages.ExecuteSensePosture(ctx, secopsstages.SensePostureInput{
@@ -111,7 +96,6 @@ var pipelineCmd = &cobra.Command{
 				OutputPath:   rawP,
 				AppendOutput: true,
 				Mock:         pipeMock,
-				Tenant:       tenant,
 			}); err != nil {
 				return err
 			}
@@ -120,7 +104,6 @@ var pipelineCmd = &cobra.Command{
 			if _, err := secopsstages.ExecuteAnalysisRiskPosture(ctx, secopsstages.AnalysisRiskPostureInput{
 				InputPath:  rawP,
 				OutputPath: anomP,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -129,7 +112,6 @@ var pipelineCmd = &cobra.Command{
 			if _, err := secopsstages.ExecuteEnrichMetadata(ctx, secopsstages.EnrichMetadataInput{
 				InputPath:  anomP,
 				OutputPath: enrichP,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -140,7 +122,6 @@ var pipelineCmd = &cobra.Command{
 					InputPath:  enrichP,
 					OutputPath: auditP,
 					DryRun:     pipeDryRun,
-					Tenant:     tenant,
 				}); err != nil {
 					return err
 				}
@@ -152,10 +133,10 @@ var pipelineCmd = &cobra.Command{
 		// 3. CloudOps Pipeline
 		if !pipeSkipCloudOps {
 			fmt.Println("\n>>> [Pipeline: CloudOps Domain] <<<")
-			rawP := types.AppendTenantToPath("data/cloudops_raw.parquet", tenant)
-			anomP := types.AppendTenantToPath("data/cloudops_anomalies.parquet", tenant)
-			enrichP := types.AppendTenantToPath("data/cloudops_enriched.parquet", tenant)
-			auditP := types.AppendTenantToPath("data/cloudops_audit.parquet", tenant)
+			rawP := "data/cloudops_raw.parquet"
+			anomP := "data/cloudops_anomalies.parquet"
+			enrichP := "data/cloudops_enriched.parquet"
+			auditP := "data/cloudops_audit.parquet"
 
 			fmt.Println(" (1/5) Sense: Scanning operational hygiene...")
 			if _, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
@@ -163,7 +144,6 @@ var pipelineCmd = &cobra.Command{
 				OutputPath:   rawP,
 				AppendOutput: true,
 				Mock:         pipeMock,
-				Tenant:       tenant,
 			}); err != nil {
 				return err
 			}
@@ -172,7 +152,6 @@ var pipelineCmd = &cobra.Command{
 			if _, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
 				InputPath:  rawP,
 				OutputPath: anomP,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -181,7 +160,6 @@ var pipelineCmd = &cobra.Command{
 			if _, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
 				InputPath:  anomP,
 				OutputPath: enrichP,
-				Tenant:     tenant,
 			}); err != nil {
 				return err
 			}
@@ -192,7 +170,6 @@ var pipelineCmd = &cobra.Command{
 					InputPath:  enrichP,
 					OutputPath: auditP,
 					DryRun:     pipeDryRun,
-					Tenant:     tenant,
 				}); err != nil {
 					return err
 				}
@@ -221,5 +198,4 @@ func init() {
 	pipelineCmd.Flags().BoolVar(&pipeSkipEnforce, "skip-enforce", false, "Skip Enforce remediation stage")
 	pipelineCmd.Flags().BoolVar(&pipeDryRun, "dry-run", true, "Perform dry-run simulation for enforcement")
 	pipelineCmd.Flags().BoolVar(&pipeMock, "mock", true, "Use mock/offline cloud data")
-	pipelineCmd.Flags().StringVar(&pipeTenant, "tenant", "", "Tenant ID or name for multi-tenant isolation")
 }

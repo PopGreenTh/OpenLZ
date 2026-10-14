@@ -17,7 +17,6 @@ import (
 var (
 	verbose    bool
 	logLevel   string
-	rootTenant string
 )
 
 var rootCmd = &cobra.Command{
@@ -33,7 +32,6 @@ Sense (Posture & Vulnerabilities) -> Analyze (Risk Posture) -> Enrich (Blast Rad
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&rootTenant, "tenant", "", "Tenant identifier for multi-tenant file separation")
 
 	// 1a. sense-posture
 	var (
@@ -57,9 +55,6 @@ func init() {
 				accs = strings.Split(sSenseAccs, ",")
 			}
 			out := sSenseOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := secopsstages.ExecuteSensePosture(ctx, secopsstages.SensePostureInput{
 				Accounts:        accs,
 				Service:         sSenseSvc,
@@ -69,7 +64,6 @@ func init() {
 				AppendOutput:    sSenseAppendOutput || sSenseUpsert,
 				Upsert:          sSenseAppendOutput || sSenseUpsert,
 				Mock:            sSenseMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -109,9 +103,6 @@ func init() {
 				accs = strings.Split(sVulnAccs, ",")
 			}
 			out := sVulnOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := secopsstages.ExecuteSenseVulner(ctx, secopsstages.SenseVulnerInput{
 				Accounts:        accs,
 				Format:          sVulnFormat,
@@ -120,7 +111,6 @@ func init() {
 				AppendOutput:    sVulnAppendOutput || sVulnUpsert,
 				Upsert:          sVulnAppendOutput || sVulnUpsert,
 				Mock:            sVulnMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -150,17 +140,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteAnalysisRiskPosture(ctx, secopsstages.AnalysisRiskPostureInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -185,17 +168,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteEnrichMetadata(ctx, secopsstages.EnrichMetadataInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -221,18 +197,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteEnforceRemediation(ctx, secopsstages.EnforceRemediationInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     sEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -261,16 +230,12 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteReportSummary(ctx, secopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          sRepFmt,
 				OutputPath:      sRepOut,
 				AppendTimestamp: sRepAppendTS,
 				Upsert:          sRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err

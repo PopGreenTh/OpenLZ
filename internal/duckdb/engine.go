@@ -90,7 +90,9 @@ func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, reco
 		"unit VARCHAR",
 		"currency VARCHAR",
 		"csp VARCHAR",
+		"connection_id VARCHAR",
 		"region VARCHAR",
+		"zone VARCHAR",
 		"usage_type VARCHAR",
 		"resource_id VARCHAR",
 		"primary_tag VARCHAR",
@@ -184,7 +186,9 @@ func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, reco
 			r.Unit,
 			r.Currency,
 			csp,
+			r.ConnectionID,
 			r.Region,
+			r.Zone,
 			r.UsageType,
 			r.ResourceID,
 			primaryTag,
@@ -229,7 +233,7 @@ func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRec
 
 // UpsertFinOpsParquet merges incoming CostRecords into an existing Parquet file.
 // If the destination parquet file does not exist, it writes a new one.
-// If it exists, records with identical business keys (account_id, service, usage_date, usage_period, metric, frequency, csp, region, usage_type, resource_id, primary_tag, secondary_tag)
+// If it exists, records with identical business keys (account_id, service, usage_date, usage_period, metric, frequency, csp, connection_id, region, zone, usage_type, resource_id, primary_tag, secondary_tag)
 // are replaced with the latest record ordered by recorded_at DESC.
 func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRecord, outputPath string) error {
 	if err := ensureDir(outputPath); err != nil {
@@ -253,14 +257,15 @@ func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRe
 	if err != nil {
 		return err
 	}
-	// Files written before csp/resource_id existed are upgraded on merge.
+	// Files written before csp/resource_id/connection_id/zone existed are upgraded on merge.
 	existingSelect := fmt.Sprintf(`account_id, account_name, service, usage_date, usage_period,
 				amount, daily_amount, days_in_period, metric, frequency,
-				unit, currency, %s, region, usage_type, %s, primary_tag, secondary_tag, recorded_at`,
-		columnOr(cols, "csp", "'AWS'"), columnOr(cols, "resource_id", "''"))
+				unit, currency, %s, %s, region, %s, usage_type, %s, primary_tag, secondary_tag, recorded_at`,
+		columnOr(cols, "csp", "'AWS'"), columnOr(cols, "connection_id", "''"),
+		columnOr(cols, "zone", "''"), columnOr(cols, "resource_id", "''"))
 	const finopsColumns = `account_id, account_name, service, usage_date, usage_period,
 				amount, daily_amount, days_in_period, metric, frequency,
-				unit, currency, csp, region, usage_type, resource_id, primary_tag, secondary_tag, recorded_at`
+				unit, currency, csp, connection_id, region, zone, usage_type, resource_id, primary_tag, secondary_tag, recorded_at`
 
 	upsertSQL := fmt.Sprintf(`
 	COPY (
@@ -274,7 +279,7 @@ func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRe
 		ranked AS (
 			SELECT *,
 				ROW_NUMBER() OVER (
-					PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, csp, region, usage_type, resource_id, primary_tag, secondary_tag
+					PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, csp, connection_id, region, zone, usage_type, resource_id, primary_tag, secondary_tag
 					ORDER BY recorded_at DESC
 				) AS rn
 			FROM combined
@@ -703,7 +708,7 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 		return nil, err
 	}
 	// Dimensions carried from sense to enrich. Older raw files without a column read as ''.
-	dims := []string{"primary_tag", "secondary_tag", "csp", "region", "usage_type", "resource_id"}
+	dims := []string{"primary_tag", "secondary_tag", "csp", "connection_id", "region", "zone", "usage_type", "resource_id"}
 	dimExprs := make([]string, len(dims))
 	for i, d := range dims {
 		if _, ok := cols[d]; ok {
@@ -887,7 +892,9 @@ type AnalyzedCostRow struct {
 	PrimaryTag   string
 	SecondaryTag string
 	CSP          string
+	ConnectionID string
 	Region       string
+	Zone         string
 	UsageType    string
 	ResourceID   string
 }
@@ -903,12 +910,14 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 		ops_domain, account_id, account_name, service, resource_or_key, metric,
 		CAST(actual_value AS DOUBLE), CAST(expected_value AS DOUBLE), CAST(deviation_ratio AS DOUBLE),
 		severity, status, timestamp,
-		%s, %s, %s, %s, %s, %s
+		%s, %s, %s, %s, %s, %s, %s, %s
 	FROM read_parquet('%s');`,
 		varcharOrEmpty(cols, "primary_tag"),
 		varcharOrEmpty(cols, "secondary_tag"),
 		varcharOrEmpty(cols, "csp"),
+		varcharOrEmpty(cols, "connection_id"),
 		varcharOrEmpty(cols, "region"),
+		varcharOrEmpty(cols, "zone"),
 		varcharOrEmpty(cols, "usage_type"),
 		varcharOrEmpty(cols, "resource_id"),
 		cleanPath(parquetPath),
@@ -927,7 +936,7 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 			&row.ActualValue, &row.ExpectedValue, &row.Deviation,
 			&row.Severity, &row.Status, &row.Timestamp,
 			&row.PrimaryTag, &row.SecondaryTag,
-			&row.CSP, &row.Region, &row.UsageType, &row.ResourceID,
+			&row.CSP, &row.ConnectionID, &row.Region, &row.Zone, &row.UsageType, &row.ResourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -1067,6 +1076,24 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 		resource_group VARCHAR,
 		resource_id VARCHAR,
 		resource VARCHAR,
+		feature_id VARCHAR,
+		feature VARCHAR,
+		function_id VARCHAR,
+		function VARCHAR,
+		owner_team_id VARCHAR,
+		owner_team VARCHAR,
+		product_line_id VARCHAR,
+		product_line VARCHAR,
+		customer_id VARCHAR,
+		customer VARCHAR,
+		lz_id VARCHAR,
+		lz VARCHAR,
+		connection_id VARCHAR,
+		connection VARCHAR,
+		billing_currency VARCHAR,
+		zone_id VARCHAR,
+		zone VARCHAR,
+		attribution_trail VARCHAR,
 		timestamp TIMESTAMP
 	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
@@ -1102,6 +1129,7 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 			r.CSPID, r.CSP, r.RegionID, r.Region, r.ServiceID,
 			r.ServiceUsageID, r.ServiceUsage, r.UsageID, r.Usage,
 			r.ResourceGroupID, r.ResourceGroup, r.ResourceID, r.Resource,
+			r.FeatureID, r.Feature, r.FunctionID, r.Function, r.OwnerTeamID, r.OwnerTeam, r.ProductLineID, r.ProductLine, r.CustomerID, r.Customer, r.LZID, r.LZ, r.ConnectionID, r.Connection, r.BillingCurrency, r.ZoneID, r.Zone, r.AttributionTrail,
 			ts,
 		); err != nil {
 			return fmt.Errorf("failed appending enriched row: %w", err)
@@ -1201,6 +1229,7 @@ func enrichedColumnSelect(cols map[string]struct{}) string {
 		"csp_id", "csp", "region_id", "region", "service_id",
 		"service_usage_id", "service_usage", "usage_id", "usage",
 		"resource_group_id", "resource_group", "resource_id", "resource",
+		"feature_id", "feature", "function_id", "function", "owner_team_id", "owner_team", "product_line_id", "product_line", "customer_id", "customer", "lz_id", "lz", "connection_id", "connection", "billing_currency", "zone_id", "zone", "attribution_trail",
 		"timestamp",
 	}
 	parts := make([]string, len(names))
@@ -1254,6 +1283,7 @@ func (e *Engine) ReadEnrichedFromParquet(ctx context.Context, parquetPath string
 			&r.CSPID, &r.CSP, &r.RegionID, &r.Region, &r.ServiceID,
 			&r.ServiceUsageID, &r.ServiceUsage, &r.UsageID, &r.Usage,
 			&r.ResourceGroupID, &r.ResourceGroup, &r.ResourceID, &r.Resource,
+			&r.FeatureID, &r.Feature, &r.FunctionID, &r.Function, &r.OwnerTeamID, &r.OwnerTeam, &r.ProductLineID, &r.ProductLine, &r.CustomerID, &r.Customer, &r.LZID, &r.LZ, &r.ConnectionID, &r.Connection, &r.BillingCurrency, &r.ZoneID, &r.Zone, &r.AttributionTrail,
 			&r.Timestamp,
 		); err != nil {
 			return nil, err

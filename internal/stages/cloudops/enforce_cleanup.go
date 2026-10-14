@@ -3,7 +3,6 @@ package cloudops
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -16,18 +15,16 @@ type EnforceCleanupInput struct {
 	InputPath  string `json:"inputPath"`
 	OutputPath string `json:"outputPath"`
 	DryRun     bool   `json:"dryRun"`
-	Tenant     string `json:"tenant"`
 }
 
 // ExecuteEnforceCleanup runs Stage 4: Orphaned Resource Cleanup.
 func ExecuteEnforceCleanup(ctx context.Context, in EnforceCleanupInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = types.AppendTenantToPath("data/cloudops_enriched.parquet", in.Tenant)
+		in.InputPath = "data/cloudops_enriched.parquet"
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/cloudops_audit.parquet", in.Tenant)
+		in.OutputPath = "data/cloudops_audit.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 

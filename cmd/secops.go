@@ -28,7 +28,6 @@ var (
 	secopsAppendTS     bool
 	secopsAppendOutput bool
 	secopsUpsert       bool
-	secopsTenant       string
 )
 
 var secopsCmd = &cobra.Command{
@@ -42,14 +41,7 @@ var secopsSenseCmd = &cobra.Command{
 	Short: "Stage 1: Scan AWS security posture concurrently into DuckDB raw.parquet",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := secopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := secopsRawPath
-		if !cmd.Flags().Changed("output") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 
 		var accounts []string
 		if secopsAccounts != "" {
@@ -63,7 +55,6 @@ var secopsSenseCmd = &cobra.Command{
 			AppendOutput:    secopsAppendOutput || secopsUpsert,
 			Upsert:          secopsAppendOutput || secopsUpsert,
 			Mock:            secopsMock,
-			Tenant:          tenant,
 		})
 		if err != nil {
 			return err
@@ -78,23 +69,12 @@ var secopsAnalyzeCmd = &cobra.Command{
 	Short: "Stage 2: Run DuckDB OLAP queries to filter high-severity risks",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := secopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := secopsRawPath
-		if !cmd.Flags().Changed("input") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 		anomPath := secopsAnomPath
-		if !cmd.Flags().Changed("output") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 
 		res, err := secopsstages.ExecuteAnalysisRiskPosture(ctx, secopsstages.AnalysisRiskPostureInput{
 			InputPath:  rawPath,
 			OutputPath: anomPath,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -109,23 +89,12 @@ var secopsEnrichCmd = &cobra.Command{
 	Short: "Stage 3: Annotate security findings with blast radius and environment",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := secopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		anomPath := secopsAnomPath
-		if !cmd.Flags().Changed("input") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 		enrichPath := secopsEnrichPath
-		if !cmd.Flags().Changed("output") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		res, err := secopsstages.ExecuteEnrichMetadata(ctx, secopsstages.EnrichMetadataInput{
 			InputPath:  anomPath,
 			OutputPath: enrichPath,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -140,24 +109,13 @@ var secopsEnforceCmd = &cobra.Command{
 	Short: "Stage 4: Remediate public exposure and policy violations",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := secopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := secopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 		auditPath := secopsAuditPath
-		if !cmd.Flags().Changed("output") {
-			auditPath = types.AppendTenantToPath(auditPath, tenant)
-		}
 
 		res, err := secopsstages.ExecuteEnforceRemediation(ctx, secopsstages.EnforceRemediationInput{
 			InputPath:  enrichPath,
 			OutputPath: auditPath,
 			DryRun:     secopsDryRun,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -172,14 +130,7 @@ var secopsReportCmd = &cobra.Command{
 	Short: "Stage 5: Generate SecOps reports (table, markdown, powerbi, excel, serve)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := secopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := secopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		engine, err := duckdb.NewEngine()
 		if err != nil {
@@ -246,7 +197,6 @@ var secopsReportCmd = &cobra.Command{
 }
 
 func init() {
-	secopsCmd.PersistentFlags().StringVar(&secopsTenant, "tenant", "", "Tenant ID or name for multi-tenant isolation")
 
 	// Flags for sense
 	secopsSenseCmd.Flags().StringVar(&secopsAccounts, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")

@@ -3,7 +3,6 @@ package secops
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/aws"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -20,14 +19,12 @@ type SenseVulnerInput struct {
 	AppendOutput    bool     `json:"appendOutput"`
 	Upsert          bool     `json:"upsert"`
 	Mock            bool     `json:"mock"`
-	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseVulner runs Stage 1b: SecOps Vulnerabilities & CVEs Sense.
 func ExecuteSenseVulner(ctx context.Context, in SenseVulnerInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/secops_vulner_raw.parquet", in.Tenant)
+		in.OutputPath = "data/secops_vulner_raw.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Mock && len(in.Accounts) == 0 {

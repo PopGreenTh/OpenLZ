@@ -22,14 +22,12 @@ type SensePostureInput struct {
 	AppendOutput    bool     `json:"appendOutput"`
 	Upsert          bool     `json:"upsert"`
 	Mock            bool     `json:"mock"`
-	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSensePosture runs Stage 1a: SecOps Posture Findings Sense.
 func ExecuteSensePosture(ctx context.Context, in SensePostureInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/secops_raw.parquet", in.Tenant)
+		in.OutputPath = "data/secops_raw.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Service == "" {

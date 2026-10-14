@@ -3,7 +3,6 @@ package finops
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/PopGreenTh/OpenLZ/internal/aws"
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -21,14 +20,12 @@ type SenseCostAnomalyInput struct {
 	AppendOutput    bool     `json:"appendOutput"`
 	Upsert          bool     `json:"upsert"`
 	Mock            bool     `json:"mock"`
-	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseCostAnomaly runs Stage 1b: AWS Cost Anomaly Detection Sense.
 func ExecuteSenseCostAnomaly(ctx context.Context, in SenseCostAnomalyInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/finops_anomalies.parquet", in.Tenant)
+		in.OutputPath = "data/finops_anomalies.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Mock && len(in.Accounts) == 0 {

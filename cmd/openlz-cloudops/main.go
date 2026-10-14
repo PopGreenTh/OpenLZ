@@ -15,9 +15,8 @@ import (
 )
 
 var (
-	verbose    bool
-	logLevel   string
-	rootTenant string
+	verbose  bool
+	logLevel string
 )
 
 var rootCmd = &cobra.Command{
@@ -33,7 +32,6 @@ Sense (Operational Hygiene) -> Analyze (Waste & Stale Assets) -> Enrich (Lifecyc
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&rootTenant, "tenant", "", "Tenant identifier for multi-tenant file separation")
 
 	// 1. sense-hygiene
 	var (
@@ -57,9 +55,6 @@ func init() {
 				accs = strings.Split(cSenseAccs, ",")
 			}
 			out := cSenseOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
 				Accounts:        accs,
 				Service:         cSenseSvc,
@@ -69,7 +64,6 @@ func init() {
 				AppendOutput:    cSenseAppendOutput || cSenseUpsert,
 				Upsert:          cSenseAppendOutput || cSenseUpsert,
 				Mock:            cSenseMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -100,17 +94,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -135,17 +122,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -171,18 +151,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     cEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -211,16 +184,12 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteReportSummary(ctx, cloudopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          cRepFmt,
 				OutputPath:      cRepOut,
 				AppendTimestamp: cRepAppendTS,
 				Upsert:          cRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err

@@ -43,7 +43,6 @@ var (
 	finopsAppendTS         bool
 	finopsAppendOutput     bool
 	finopsUpsert           bool
-	finopsTenant           string
 )
 
 var finopsCmd = &cobra.Command{
@@ -84,14 +83,7 @@ var finopsSenseCmd = &cobra.Command{
 				}
 			}
 		}
-		tenant := finopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := finopsRawPath
-		if !cmd.Flags().Changed("output") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 
 		res, err := finopsstages.ExecuteSenseCostExplorer(ctx, finopsstages.SenseCostExplorerInput{
 			Accounts:         accounts,
@@ -115,7 +107,6 @@ var finopsSenseCmd = &cobra.Command{
 			Upsert:           finopsAppendOutput || finopsUpsert,
 			CacheDBPath:      cacheDBPath,
 			Mock:             finopsMock,
-			Tenant:           tenant,
 		})
 		if err != nil {
 			return err
@@ -130,24 +121,13 @@ var finopsAnalyzeCmd = &cobra.Command{
 	Short: "Stage 2: Run DuckDB OLAP queries to detect cost spikes & anomalies",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := finopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		rawPath := finopsRawPath
-		if !cmd.Flags().Changed("input") {
-			rawPath = types.AppendTenantToPath(rawPath, tenant)
-		}
 		anomPath := finopsAnomPath
-		if !cmd.Flags().Changed("output") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 
 		res, err := finopsstages.ExecuteAnalyzeVarianceImpact(ctx, finopsstages.AnalyzeVarianceImpactInput{
 			InputPath:  rawPath,
 			OutputPath: anomPath,
 			Threshold:  finopsThreshold,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -162,24 +142,13 @@ var finopsEnrichCmd = &cobra.Command{
 	Short: "Stage 3: Annotate anomalies with Landing Zone ownership & cost centers",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := finopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		anomPath := finopsAnomPath
-		if !cmd.Flags().Changed("input") {
-			anomPath = types.AppendTenantToPath(anomPath, tenant)
-		}
 		enrichPath := finopsEnrichPath
-		if !cmd.Flags().Changed("output") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
 			InputPath:    anomPath,
 			OutputPath:   enrichPath,
 			TaxonomyPath: finopsTaxonomy,
-			Tenant:       tenant,
 		})
 		if err != nil {
 			return err
@@ -194,24 +163,13 @@ var finopsEnforceCmd = &cobra.Command{
 	Short: "Stage 4: Execute FinOps policies and guardrail tagging",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := finopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := finopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 		auditPath := finopsAuditPath
-		if !cmd.Flags().Changed("output") {
-			auditPath = types.AppendTenantToPath(auditPath, tenant)
-		}
 
 		res, err := finopsstages.ExecuteEnforceTagging(ctx, finopsstages.EnforceTaggingInput{
 			InputPath:  enrichPath,
 			OutputPath: auditPath,
 			DryRun:     finopsDryRun,
-			Tenant:     tenant,
 		})
 		if err != nil {
 			return err
@@ -226,14 +184,7 @@ var finopsReportCmd = &cobra.Command{
 	Short: "Stage 5: Generate FinOps reports (table, markdown, powerbi, excel, serve)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		tenant := finopsTenant
-		if tenant == "" {
-			tenant = rootTenant
-		}
 		enrichPath := finopsEnrichPath
-		if !cmd.Flags().Changed("input") {
-			enrichPath = types.AppendTenantToPath(enrichPath, tenant)
-		}
 
 		engine, err := duckdb.NewEngine()
 		if err != nil {
@@ -300,7 +251,6 @@ var finopsReportCmd = &cobra.Command{
 }
 
 func init() {
-	finopsCmd.PersistentFlags().StringVar(&finopsTenant, "tenant", "", "Tenant ID or name for multi-tenant isolation")
 
 	// Flags for sense
 	finopsSenseCmd.Flags().StringVar(&finopsAccounts, "accounts", "", "Comma-separated list of AWS Account IDs (auto-detected via STS if omitted)")
@@ -332,7 +282,7 @@ func init() {
 	// Flags for enrich
 	finopsEnrichCmd.Flags().StringVar(&finopsAnomPath, "input", "data/finops_anomalies.parquet", "Input anomalies parquet file path")
 	finopsEnrichCmd.Flags().StringVar(&finopsEnrichPath, "output", "data/finops_enriched.parquet", "Output enriched parquet file path")
-	finopsEnrichCmd.Flags().StringVar(&finopsTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
+	finopsEnrichCmd.Flags().StringVar(&finopsTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
 
 	// Flags for enforce
 	finopsEnforceCmd.Flags().StringVar(&finopsEnrichPath, "input", "data/finops_enriched.parquet", "Input enriched parquet file path")

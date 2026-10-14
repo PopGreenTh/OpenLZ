@@ -40,22 +40,6 @@ func AppendTimestampToPath(filePath string, t ...time.Time) string {
 	return fmt.Sprintf("%s_%s%s", base, ts, ext)
 }
 
-// AppendTenantToPath inserts a tenant name into a file path before its extension.
-// Example: "data/finops_raw.parquet" with tenant "acme" -> "data/finops_raw_acme.parquet"
-// If tenant is empty or filePath is empty, filePath is returned unmodified.
-func AppendTenantToPath(filePath string, tenant string) string {
-	tenant = strings.TrimSpace(tenant)
-	if filePath == "" || tenant == "" {
-		return filePath
-	}
-	ext := filepath.Ext(filePath)
-	base := strings.TrimSuffix(filePath, ext)
-	if strings.HasSuffix(base, "_"+tenant) {
-		return filePath
-	}
-	return fmt.Sprintf("%s_%s%s", base, tenant, ext)
-}
-
 // StripExtensions removes export extensions (.parquet, .csv, .xlsx, .m) from a path.
 func StripExtensions(p string) string {
 	lower := strings.ToLower(p)

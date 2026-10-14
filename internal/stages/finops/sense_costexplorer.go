@@ -44,14 +44,12 @@ type SenseCostExplorerInput struct {
 	CacheDBPath      string   `json:"cacheDBPath"`
 	NoCache          bool     `json:"noCache"`
 	Mock             bool     `json:"mock"`
-	Tenant           string   `json:"tenant"`
 }
 
 // ExecuteSenseCostExplorer runs Stage 1a: AWS Cost Explorer Sense.
 func ExecuteSenseCostExplorer(ctx context.Context, in SenseCostExplorerInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/finops_raw.parquet", in.Tenant)
+		in.OutputPath = "data/finops_raw.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.CacheDBPath == "" {

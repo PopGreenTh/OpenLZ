@@ -62,6 +62,12 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 		withResources = true
 	}
 
+	// With SERVICE_AZ the mock reports the first availability zone of the default region.
+	zone := ""
+	if strings.ToUpper(strings.TrimSpace(opts.GroupBy)) == "SERVICE_AZ" {
+		zone = DEFAULT_REGION + "a"
+	}
+
 	accounts := []string{opts.AccountID}
 	if opts.PayerAccountID != "" {
 		if len(opts.IncludeAccounts) > 0 {
@@ -128,7 +134,9 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 						Unit:         unit,
 						Currency:     "USD",
 						CSP:          "AWS",
+						ConnectionID: opts.PayerAccountID,
 						Region:       DEFAULT_REGION,
+						Zone:         zone,
 						UsageType:    usageType,
 						ResourceID:   resourceID,
 						PrimaryTag:   s.proj,
@@ -177,7 +185,9 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 					Unit:         unit,
 					Currency:     "USD",
 					CSP:          "AWS",
+					ConnectionID: opts.PayerAccountID,
 					Region:       DEFAULT_REGION,
+					Zone:         zone,
 					UsageType:    usageType,
 					ResourceID:   resourceID,
 					PrimaryTag:   s.proj,
@@ -223,7 +233,9 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 					Unit:         unit,
 					Currency:     "USD",
 					CSP:          "AWS",
+					ConnectionID: opts.PayerAccountID,
 					Region:       DEFAULT_REGION,
+					Zone:         zone,
 					UsageType:    usageType,
 					ResourceID:   resourceID,
 					PrimaryTag:   s.proj,

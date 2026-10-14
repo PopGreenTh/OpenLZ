@@ -22,14 +22,12 @@ type SenseHygieneInput struct {
 	AppendOutput    bool     `json:"appendOutput"`
 	Upsert          bool     `json:"upsert"`
 	Mock            bool     `json:"mock"`
-	Tenant          string   `json:"tenant"`
 }
 
 // ExecuteSenseHygiene runs Stage 1: CloudOps Operational Hygiene Sense.
 func ExecuteSenseHygiene(ctx context.Context, in SenseHygieneInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/cloudops_raw.parquet", in.Tenant)
+		in.OutputPath = "data/cloudops_raw.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 	if in.Service == "" {

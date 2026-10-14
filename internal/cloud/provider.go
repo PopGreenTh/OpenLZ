@@ -12,17 +12,19 @@ type CostRecord struct {
 	AccountID    string            `json:"account_id"`
 	AccountName  string            `json:"account_name"`
 	Service      string            `json:"service"`
-	UsageDate    string            `json:"usage_date"`             // YYYY-MM-DD
-	UsagePeriod  string            `json:"usage_period,omitempty"` // Specific period identifier (e.g. hourly ISO8601 or month YYYY-MM)
-	Amount       float64           `json:"amount"`                 // Raw amount for the specific period
-	DailyAmount  float64           `json:"daily_amount"`           // Normalized daily cost or usage for comparability across frequencies
-	DaysInPeriod float64           `json:"days_in_period"`         // Divisor: 1/24 (HOURLY), 1.0 (DAILY), 28..31 (MONTHLY)
-	Metric       string            `json:"metric"`                 // e.g. "UnblendedCost", "UsageQuantity", "AmortizedCost"
-	Frequency    string            `json:"frequency"`              // "HOURLY", "DAILY", "MONTHLY"
-	Unit         string            `json:"unit"`                   // e.g. USD, Hours, GB-Mo, Requests
-	Currency     string            `json:"currency"`               // USD
-	CSP          string            `json:"csp,omitempty"`          // Cloud service provider, e.g. AWS
+	UsageDate    string            `json:"usage_date"`              // YYYY-MM-DD
+	UsagePeriod  string            `json:"usage_period,omitempty"`  // Specific period identifier (e.g. hourly ISO8601 or month YYYY-MM)
+	Amount       float64           `json:"amount"`                  // Raw amount for the specific period
+	DailyAmount  float64           `json:"daily_amount"`            // Normalized daily cost or usage for comparability across frequencies
+	DaysInPeriod float64           `json:"days_in_period"`          // Divisor: 1/24 (HOURLY), 1.0 (DAILY), 28..31 (MONTHLY)
+	Metric       string            `json:"metric"`                  // e.g. "UnblendedCost", "UsageQuantity", "AmortizedCost"
+	Frequency    string            `json:"frequency"`               // "HOURLY", "DAILY", "MONTHLY"
+	Unit         string            `json:"unit"`                    // e.g. USD, Hours, GB-Mo, Requests
+	Currency     string            `json:"currency"`                // USD
+	CSP          string            `json:"csp,omitempty"`           // Cloud service provider, e.g. AWS
+	ConnectionID string            `json:"connection_id,omitempty"` // Billing connection: the payer account id in payer mode
 	Region       string            `json:"region"`
+	Zone         string            `json:"zone,omitempty"` // Availability zone, set with the SERVICE_AZ group-by
 	UsageType    string            `json:"usage_type"`
 	ResourceID   string            `json:"resource_id,omitempty"` // Set when sensed with resource-level granularity
 	PrimaryTag   string            `json:"primary_tag,omitempty"`
@@ -121,6 +123,24 @@ type EnrichedRecord struct {
 	ResourceGroup      string    `json:"resource_group,omitempty"`
 	ResourceID         string    `json:"resource_id,omitempty"`
 	Resource           string    `json:"resource,omitempty"`
+	FeatureID          string    `json:"feature_id,omitempty"`
+	Feature            string    `json:"feature,omitempty"`
+	FunctionID         string    `json:"function_id,omitempty"`
+	Function           string    `json:"function,omitempty"`
+	OwnerTeamID        string    `json:"owner_team_id,omitempty"`
+	OwnerTeam          string    `json:"owner_team,omitempty"`
+	ProductLineID      string    `json:"product_line_id,omitempty"`
+	ProductLine        string    `json:"product_line,omitempty"`
+	CustomerID         string    `json:"customer_id,omitempty"`
+	Customer           string    `json:"customer,omitempty"`
+	LZID               string    `json:"lz_id,omitempty"`
+	LZ                 string    `json:"lz,omitempty"`
+	ConnectionID       string    `json:"connection_id,omitempty"`
+	Connection         string    `json:"connection,omitempty"`
+	BillingCurrency    string    `json:"billing_currency,omitempty"`
+	ZoneID             string    `json:"zone_id,omitempty"`
+	Zone               string    `json:"zone,omitempty"`
+	AttributionTrail   string    `json:"attribution_trail,omitempty"`
 	Timestamp          time.Time `json:"timestamp"`
 }
 

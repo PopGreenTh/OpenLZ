@@ -343,6 +343,13 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("REGION")},
 			},
 		})
+	case "SERVICE_AZ":
+		passes = append(passes, groupPass{
+			groupDefs: []types.GroupDefinition{
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("AZ")},
+			},
+		})
 	case "SERVICE_USAGE_TYPE":
 		passes = append(passes, groupPass{
 			groupDefs: []types.GroupDefinition{
@@ -482,6 +489,7 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 						svcName := "Unknown"
 						rowAccountID := accountID
 						rowRegion := c.cfg.Region
+						rowZone := ""
 						rowUsageType := "Usage"
 						rowResource := ""
 						var tagVal string
@@ -497,6 +505,12 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 										rowAccountID = key
 									case "REGION":
 										rowRegion = key
+									case "AZ":
+										if key != "" && key != "NoAZ" {
+											rowZone = key
+											// An availability zone is its region plus one letter.
+											rowRegion = regionOfZone(key, rowRegion)
+										}
 									case "USAGE_TYPE":
 										rowUsageType = key
 									case "RESOURCE_ID":
@@ -531,7 +545,7 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 						}
 
 						dailyAmount, daysInPeriod, usageDate, usagePeriod := computeDailyMetrics(freq, amount, rawStart, endDate)
-						mergeKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", rowAccountID, svcName, usageDate, usagePeriod, metric, rowRegion, rowUsageType, rowResource)
+						mergeKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s", rowAccountID, svcName, usageDate, usagePeriod, metric, rowRegion, rowZone, rowUsageType, rowResource)
 
 						if existing, ok := recordMap[mergeKey]; ok {
 							// If record exists from prior tag pass, enrich with this tag without duplicating amount
@@ -569,7 +583,9 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 								Unit:         unit,
 								Currency:     "USD",
 								CSP:          "AWS",
+								ConnectionID: opts.PayerAccountID,
 								Region:       rowRegion,
+								Zone:         rowZone,
 								UsageType:    rowUsageType,
 								ResourceID:   rowResource,
 								PrimaryTag:   primaryVal,
@@ -1399,4 +1415,14 @@ func (c *Client) FetchCostAnomalies(ctx context.Context, accountID, startDate, e
 	}
 	slog.InfoContext(ctx, "Completed Cost Anomalies query", "anomalyCount", len(records))
 	return records, nil
+}
+
+// regionOfZone derives the region from an AWS availability zone id such as "ap-southeast-1a".
+// Anything that does not look like one keeps the fallback.
+func regionOfZone(zone, fallback string) string {
+	if len(zone) > 2 && zone[len(zone)-1] >= 'a' && zone[len(zone)-1] <= 'z' &&
+		zone[len(zone)-2] >= '0' && zone[len(zone)-2] <= '9' {
+		return zone[:len(zone)-1]
+	}
+	return fallback
 }

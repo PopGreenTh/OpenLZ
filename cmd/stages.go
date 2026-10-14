@@ -11,7 +11,6 @@ import (
 	cloudopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/cloudops"
 	finopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/finops"
 	secopsstages "github.com/PopGreenTh/OpenLZ/internal/stages/secops"
-	types "github.com/PopGreenTh/OpenLZ/internal/stages/types"
 	"github.com/spf13/cobra"
 )
 
@@ -125,9 +124,6 @@ func init() {
 				}
 			}
 			out := fSenseOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := finopsstages.ExecuteSenseCostExplorer(ctx, finopsstages.SenseCostExplorerInput{
 				Accounts:         accs,
 				PayerAccount:     fSensePayer,
@@ -152,7 +148,6 @@ func init() {
 				CacheDBPath:      fSenseCacheDB,
 				NoCache:          fSenseNoCache,
 				Mock:             fSenseMock,
-				Tenant:           rootTenant,
 			})
 			if err != nil {
 				return err
@@ -197,9 +192,6 @@ func init() {
 				accs = strings.Split(fAnomAccs, ",")
 			}
 			out := fAnomOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := finopsstages.ExecuteSenseCostAnomaly(ctx, finopsstages.SenseCostAnomalyInput{
 				Accounts:     accs,
 				StartDate:    fAnomStart,
@@ -208,7 +200,6 @@ func init() {
 				AppendOutput: fAnomAppendOutput || fAnomUpsert,
 				Upsert:       fAnomAppendOutput || fAnomUpsert,
 				Mock:         fAnomMock,
-				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -233,18 +224,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteAnalyzeVarianceImpact(ctx, finopsstages.AnalyzeVarianceImpactInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				Threshold:  fAnaThresh,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -265,18 +249,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
 				InputPath:    inPath,
 				OutputPath:   outPath,
 				TaxonomyPath: fEnrTaxonomy,
-				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -287,7 +264,7 @@ func init() {
 	}
 	cmdFinOpsEnr.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdFinOpsEnr.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
-	cmdFinOpsEnr.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
+	cmdFinOpsEnr.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
 	RootCmd.AddCommand(cmdFinOpsEnr)
 
 	// 4. finops-enforce-tagging
@@ -297,18 +274,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteEnforceTagging(ctx, finopsstages.EnforceTaggingInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     fEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -333,20 +303,13 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fRepOut
-			if !cmd.Flags().Changed("output") && outPath != "" {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteReportSummary(ctx, finopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          fRepFmt,
 				OutputPath:      outPath,
 				AppendTimestamp: fRepAppendTS,
 				Upsert:          fRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -404,9 +367,6 @@ func init() {
 				accs = strings.Split(sSenseAccs, ",")
 			}
 			out := sSenseOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := secopsstages.ExecuteSensePosture(ctx, secopsstages.SensePostureInput{
 				Accounts:        accs,
 				Service:         sSenseSvc,
@@ -415,7 +375,6 @@ func init() {
 				AppendOutput:    sSenseAppendOutput || sSenseUpsert,
 				Upsert:          sSenseAppendOutput || sSenseUpsert,
 				Mock:            sSenseMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -444,9 +403,6 @@ func init() {
 				accs = strings.Split(sVulnAccs, ",")
 			}
 			out := sVulnOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := secopsstages.ExecuteSenseVulner(ctx, secopsstages.SenseVulnerInput{
 				Accounts:        accs,
 				OutputPath:      out,
@@ -454,7 +410,6 @@ func init() {
 				AppendOutput:    sVulnAppendOutput || sVulnUpsert,
 				Upsert:          sVulnAppendOutput || sVulnUpsert,
 				Mock:            sVulnMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -478,17 +433,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteAnalysisRiskPosture(ctx, secopsstages.AnalysisRiskPostureInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -508,17 +456,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteEnrichMetadata(ctx, secopsstages.EnrichMetadataInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -538,18 +479,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteEnforceRemediation(ctx, secopsstages.EnforceRemediationInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     sEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -570,20 +504,13 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := sRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := sRepOut
-			if !cmd.Flags().Changed("output") && outPath != "" {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := secopsstages.ExecuteReportSummary(ctx, secopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          sRepFmt,
 				OutputPath:      outPath,
 				AppendTimestamp: sRepAppendTS,
 				Upsert:          sRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -635,9 +562,6 @@ func init() {
 				accs = strings.Split(cSenseAccs, ",")
 			}
 			out := cSenseOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteSenseHygiene(ctx, cloudopsstages.SenseHygieneInput{
 				Accounts:        accs,
 				Service:         cSenseSvc,
@@ -646,7 +570,6 @@ func init() {
 				AppendOutput:    cSenseAppendOutput || cSenseUpsert,
 				Upsert:          cSenseAppendOutput || cSenseUpsert,
 				Mock:            cSenseMock,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err
@@ -671,17 +594,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteAnalysisWasteHygiene(ctx, cloudopsstages.AnalysisWasteHygieneInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -701,17 +617,10 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteEnrichLifecycle(ctx, cloudopsstages.EnrichLifecycleInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -731,18 +640,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteEnforceCleanup(ctx, cloudopsstages.EnforceCleanupInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     cEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -763,20 +665,13 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := cRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := cRepOut
-			if !cmd.Flags().Changed("output") && outPath != "" {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := cloudopsstages.ExecuteReportSummary(ctx, cloudopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          cRepFmt,
 				OutputPath:      outPath,
 				AppendTimestamp: cRepAppendTS,
 				Upsert:          cRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err

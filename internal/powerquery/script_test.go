@@ -24,8 +24,8 @@ func TestGenerateRawFinOpsCsvMScript_AbsolutePath(t *testing.T) {
 		t.Errorf("expected M script to contain absolute escaped path %q, got:\n%s", expectedEscaped, mCode)
 	}
 
-	if !strings.Contains(mCode, `Columns=19`) {
-		t.Errorf("expected Columns=19 in M script, got:\n%s", mCode)
+	if !strings.Contains(mCode, `Columns=21`) {
+		t.Errorf("expected Columns=21 in M script, got:\n%s", mCode)
 	}
 }
 

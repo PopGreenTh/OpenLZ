@@ -18,7 +18,6 @@ var (
 	cacheDBPath string
 	verbose     bool
 	logLevel    string
-	rootTenant  string
 )
 
 var rootCmd = &cobra.Command{
@@ -35,7 +34,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cacheDBPath, "cache-db", "openlz_cache.duckdb", "Path to persistent DuckDB cache file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&rootTenant, "tenant", "", "Tenant identifier for multi-tenant file separation")
 
 	// 1a. sense-costexplorer
 	var (
@@ -112,14 +110,13 @@ func init() {
 				ExcludeCredits:   fSenseExclCred,
 				MinCostThreshold: fSenseMinCost,
 				Format:           fSenseFormat,
-				OutputPath:       types.AppendTenantToPath(fSenseOut, rootTenant),
+				OutputPath:       fSenseOut,
 				AppendTimestamp:  fSenseAppendTS,
 				AppendOutput:     fSenseAppendOutput || fSenseUpsert,
 				Upsert:           fSenseAppendOutput || fSenseUpsert,
 				CacheDBPath:      cacheDBPath,
 				NoCache:          fSenseNoCache,
 				Mock:             fSenseMock,
-				Tenant:           rootTenant,
 			})
 			if err != nil {
 				return err
@@ -173,9 +170,6 @@ func init() {
 				accs = strings.Split(fAnomAccs, ",")
 			}
 			out := fAnomOut
-			if !cmd.Flags().Changed("output") {
-				out = types.AppendTenantToPath(out, rootTenant)
-			}
 			res, err := finopsstages.ExecuteSenseCostAnomaly(ctx, finopsstages.SenseCostAnomalyInput{
 				Accounts:     accs,
 				StartDate:    fAnomStart,
@@ -184,7 +178,6 @@ func init() {
 				AppendOutput: fAnomAppendOutput || fAnomUpsert,
 				Upsert:       fAnomAppendOutput || fAnomUpsert,
 				Mock:         fAnomMock,
-				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -215,18 +208,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fAnaIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fAnaOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteAnalyzeVarianceImpact(ctx, finopsstages.AnalyzeVarianceImpactInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				Threshold:  fAnaThresh,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -253,18 +239,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fEnrIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fEnrOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
 				InputPath:    inPath,
 				OutputPath:   outPath,
 				TaxonomyPath: fEnrTaxonomy,
-				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -275,7 +254,7 @@ func init() {
 	}
 	cmdEnrich.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdEnrich.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
-	cmdEnrich.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
+	cmdEnrich.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json when present)")
 	rootCmd.AddCommand(cmdEnrich)
 
 	// 4. enforce-tagging
@@ -291,18 +270,11 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fEnfIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			outPath := fEnfOut
-			if !cmd.Flags().Changed("output") {
-				outPath = types.AppendTenantToPath(outPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteEnforceTagging(ctx, finopsstages.EnforceTaggingInput{
 				InputPath:  inPath,
 				OutputPath: outPath,
 				DryRun:     fEnfDry,
-				Tenant:     rootTenant,
 			})
 			if err != nil {
 				return err
@@ -331,16 +303,12 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 			inPath := fRepIn
-			if !cmd.Flags().Changed("input") {
-				inPath = types.AppendTenantToPath(inPath, rootTenant)
-			}
 			res, err := finopsstages.ExecuteReportSummary(ctx, finopsstages.ReportSummaryInput{
 				InputPath:       inPath,
 				Format:          fRepFmt,
 				OutputPath:      fRepOut,
 				AppendTimestamp: fRepAppendTS,
 				Upsert:          fRepUpsert,
-				Tenant:          rootTenant,
 			})
 			if err != nil {
 				return err

@@ -6,6 +6,10 @@
 > Shareable pages: [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu) (spec with diagram) ·
 > [Taxonomy v2 Handoff](https://claude.ai/artifact/TcFmz4hvhFjzzgTHxkXU9Q) (this document).
 
+> **Status 2026-10-14:** Task 0v3 is **done** (branch `claude/taxonomy-v3-impl`): `internal/taxonomy` implements the
+> three hierarchies, single tenant, Code naming and system nodes; raw FinOps has `connection_id` and `zone`; the enriched
+> parquet has 59 columns. §1, §2 and Task 0 below describe the superseded v2 model and are kept for history.
+>
 > **v3 supersedes the model in §1, §2 and Task 0 (2026-10-14).** `docs/taxonomy-spec.md` now defines
 > **three hierarchies** (Biz, Project, Cloud) and the CloudValueDelta update mechanism. The code in
 > `internal/taxonomy` still implements v2. Do **Task 0v3** (below) instead of the model-specific parts of
@@ -143,7 +147,7 @@ rm -rf data                        # data/ is gitignored, but keep the tree clea
 
 ## 4. Remaining tasks (do them in order)
 
-### Task 0v3: Move the taxonomy model to the three hierarchies  ★ do first
+### Task 0v3: Move the taxonomy model to the three hierarchies  ✅ done
 Source of truth: `docs/taxonomy-spec.md` §2–§5. Work in `internal/taxonomy/schema.go` (`Schema`) first; Directus bootstrap, pull, push and validation then follow from it (ground rule 3).
 1. **Biz hierarchy:** BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer. Rename `owners` → `owner_teams`; rename `customer_funcs` → `customers`; add `product_lines` (parent `owner_teams`).
 2. **Project hierarchy:** Project → App → Environment → Feature → Function. Remove the `app_environments` junction; `environments.app` becomes RefParent. Add `features` and `functions`. Refs: Project *must* BusinessUnit; App *must* CostCenter; Environment *can* OwnerTeam; Feature *can* ProductLine; Function *can* Customer. Environment, Feature and Function codes are unique within their parent.
@@ -151,8 +155,10 @@ Source of truth: `docs/taxonomy-spec.md` §2–§5. Work in `internal/taxonomy/s
 4. **Links:** aligned many-to-many junctions `project_lzs`, `app_accounts`, `environment_regions`; `Resource` and `ResourceGroup` carry an optional Project-path mapping (a ref to the deepest Project node). Feature and Function have no Cloud counterpart.
 5. **System nodes:** generate `<LEVEL>-UNSPEC` and `<LEVEL>-UNALLOC` for every valid path (spec §4). They are never edited in Directus and never pushed.
 6. **Consistency checks** (spec §3.5) are `Build` warnings, never errors. The spec's attribution rules are implemented by `internal/attribution`; do not re-implement them in `taxonomy.Catalog.Resolve`.
-7. **Enriched output columns:** add `feature_id`, `feature`, `function_id`, `function`, `owner_team_id`, `owner_team`, `product_line_id`, `product_line`, `customer_id`, `customer`, `lz_id`, `lz`, `connection_id`, `connection`, `billing_currency`, `zone_id`, `zone`, `attribution_trail`. Keep the existing `owner`/`owner_id` columns filled from OwnerTeam so reports and Power Query keep working. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column counts in §4 Task 3.
+7. **Enriched output columns:** add `feature_id`, `feature`, `function_id`, `function`, `owner_team_id`, `owner_team`, `product_line_id`, `product_line`, `customer_id`, `customer`, `lz_id`, `lz`, `connection_id`, `connection`, `billing_currency`, `zone_id`, `zone`, `attribution_trail`. Keep the existing `owner`/`owner_id` columns filled from OwnerTeam so reports and Power Query keep working. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column counts in §4 Task 3 (enriched is now 59 columns, raw is 21).
 8. **Raw FinOps** gains `connection_id` and `zone` (Cost Explorer `AZ` dimension, new `SERVICE_AZ` group-by mode). Thread them through `CostRecord`, `insertFinOpsRecords`, the upsert partition, Analyze pass-through, `AnalyzedCostRow` and the raw M scripts.
+
+**Implementation notes (as built).** `Account` is one level whose code is the CSP account id (no separate CSPAccount group collection). `project_path` is a string attribute holding a path hash (`|PRJ|APP|ENV|`), validated against the Project tree. Junction rows list the child side first: `project_lzs` (project, landing_zone), `app_accounts` (account, app), `environment_regions` (environment, region). `Catalog.ProjectNodes()` returns the attribution node table including the `*-UNSPEC` nodes. The legacy `Catalog.Resolve` still works on the new schema (catalog nodes such as Region no longer narrow organizational levels; Feature and Function are never guessed); it ignores `project_path`. The enriched `customer_function*` columns are kept as aliases of `customer*`.
 
 Acceptance: all tests pass; `openlz taxonomy validate` passes with 0 warnings on the sample snapshot (rewrite `taxonomy/taxonomy.json` to the v3 shape); the sample reproduces the reference cases in `internal/attribution/testdata` end to end through Enrich (that needs Task 2b).
 

@@ -3,7 +3,6 @@ package finops
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/PopGreenTh/OpenLZ/internal/cloud"
@@ -16,18 +15,16 @@ type EnforceTaggingInput struct {
 	InputPath  string `json:"inputPath"`
 	OutputPath string `json:"outputPath"`
 	DryRun     bool   `json:"dryRun"`
-	Tenant     string `json:"tenant"`
 }
 
 // ExecuteEnforceTagging runs Stage 4: Apply FinOps Policy & CostCenter Tags.
 func ExecuteEnforceTagging(ctx context.Context, in EnforceTaggingInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = types.AppendTenantToPath("data/finops_enriched.parquet", in.Tenant)
+		in.InputPath = "data/finops_enriched.parquet"
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath == "" {
-		in.OutputPath = types.AppendTenantToPath("data/finops_audit.parquet", in.Tenant)
+		in.OutputPath = "data/finops_audit.parquet"
 	}
 	in.OutputPath = types.ResolveAbsolutePath(in.OutputPath)
 

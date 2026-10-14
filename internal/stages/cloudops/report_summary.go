@@ -18,14 +18,12 @@ type ReportSummaryInput struct {
 	OutputPath      string `json:"outputPath"`
 	AppendTimestamp bool   `json:"appendTimestamp"`
 	Upsert          bool   `json:"upsert"`
-	Tenant          string `json:"tenant"`
 }
 
 // ExecuteReportSummary runs Stage 5: CloudOps Hygiene Reporting.
 func ExecuteReportSummary(ctx context.Context, in ReportSummaryInput) (*types.StageResult, error) {
-	in.Tenant = strings.TrimSpace(in.Tenant)
 	if in.InputPath == "" {
-		in.InputPath = types.AppendTenantToPath("data/cloudops_enriched.parquet", in.Tenant)
+		in.InputPath = "data/cloudops_enriched.parquet"
 	}
 	in.InputPath = types.ResolveAbsolutePath(in.InputPath)
 	if in.OutputPath != "" {
