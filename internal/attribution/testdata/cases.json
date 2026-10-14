@@ -97,5 +97,14 @@
     "project": "|PRJ-ECOM|APP-CHK|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
     "biz": "|BU-RETAIL|CC-101|TEAM-UNSPEC|PL-UNSPEC|CUST-UNSPEC|",
     "flags": []
+  },
+  {
+    "id": 14,
+    "title": "NEW: mistyped Project and App repaired by the alias table",
+    "project": "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-RETAIL|CC-101|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": [
+      "alias"
+    ]
   }
 ]

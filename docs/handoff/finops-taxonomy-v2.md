@@ -325,7 +325,7 @@ Policy choices baked into the resolver (confirmed by the user 2026-10-14): the d
 
 PostgreSQL: the same query can back a Directus audit view. Run `attribution.SQL()` output with `psql -f` after creating the tables from `attribution.Schema`; it uses `AS MATERIALIZED`, so it needs PostgreSQL 12+.
 
-### Task 2c: CloudValueDelta (keep attributions current)
+### Task 2c: CloudValueDelta (keep attributions current)  ✅ done
 Spec §8 is the contract; this task builds it on top of Task 2b. Package: `internal/delta`.
 1. **Line table.** Persist per cost line (business key from raw upsert): `input_hash`, `amount`, `taxonomy_version`, `project_hash`, `biz_hash`, `trail`, `prev_project_hash`, `prev_biz_hash`, `resolved_at`, `changed_at`. Plus the append-only `attribution_history(line_key, taxonomy_version, project_hash, biz_hash, valid_from)`. Both live in the DuckDB cache/data store, not in the raw parquet.
 2. **Data delta.** In Sense's upsert, classify every line as `NEW`, `AMOUNT`, `KEYS` or `REMOVED` by comparing `input_hash` and `amount`. `input_hash` covers exactly the inputs `attribution` reads (spec §8.2); amount is excluded.
@@ -334,6 +334,14 @@ Spec §8 is the contract; this task builds it on top of Task 2b. Package: `inter
 5. **Restate all periods.** Reports read the latest result; the history gives the "as reported then" view.
 6. **Movement report.** Per run, print counts by delta kind and the cost moved between Projects per currency; list lines that moved to or from `*-UNSPEC` / `*-UNALLOC`.
 7. **Alias table.** Spec §3.3 / §6 step 1: add an alias evidence kind to `internal/attribution` (it is specified but not implemented), before wiring delta so alias edits count as changed keys.
+
+**Implementation notes (as built).**
+- `internal/delta`: `Store` (DuckDB file, default `data/openlz_attribution.duckdb`) with `attribution_line`, `attribution_history` and `taxonomy_state` (the previous snapshot JSON, used for the mapping delta). `Store.Sync` does data delta, mapping delta, selection, re-attribution, write and the movement `Report`. `openlz finops attribute` (`finops-attribute-lines`) reads the raw parquet and runs it; it is not part of `pipeline` yet (Task 2).
+- `taxonomy.Version` (hash of the canonical snapshot) and `taxonomy.Diff` (`ChangeSet`: added/removed/modified Project paths, changed evidence/alias/cloud keys) compute the mapping delta. `openlz taxonomy pull` (Task 1) does not exist yet, so the delta diffs against the snapshot stored from the previous `attribute` run instead of a file written by pull; when pull exists it can call the same functions and write the `ChangeSet` next to the snapshot.
+- Any change to the node set (added, removed or modified Project path) re-resolves every active line (distinct combinations, cheap) and writes only the lines whose result changed. Other mapping changes select the lines whose inputs match a changed key, plus the unresolved lines when evidence was added.
+- Alias table: `aliases` collection in `Schema`, `alias` input table and a `lal`/`ln` step in the attribution SQL; reference case 14.
+- Every Sync checks that the total active cost per currency/metric read back from the store equals the total before; a mismatch is an error.
+- Assumptions made without a product decision (listed in `docs/taxonomy-spec.md` §9; confirm with the user): what "unresolved" means for the audit list, the line identity (tags are not part of it), and the REMOVED date window.
 
 Acceptance (add as tests):
 - A second run with no new data and no taxonomy change writes nothing (idempotent).

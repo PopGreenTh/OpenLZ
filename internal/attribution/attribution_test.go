@@ -116,3 +116,37 @@ func TestSQLIsPortable(t *testing.T) {
 		}
 	}
 }
+
+// An alias repairs an invalid tag value before scoring; a repaired tag is flagged "alias",
+// never "tag-corrected", and a line without a matching alias is unchanged.
+func TestAliasRepairsTags(t *testing.T) {
+	db := loadFixtures(t)
+	got, err := Resolve(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[int]Result{}
+	for _, r := range got {
+		by[r.LineID] = r
+	}
+	r := by[14]
+	if r.ProjectHash != "|PRJ-ECOM|APP-CHK|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|" {
+		t.Errorf("project hash %s", r.ProjectHash)
+	}
+	if !strings.Contains(r.Trail, "alias") || strings.Contains(r.Trail, "tag-corrected") {
+		t.Errorf("trail %q", r.Trail)
+	}
+	if strings.Contains(by[1].Trail, "alias") {
+		t.Errorf("line 1 has no alias, trail %q", by[1].Trail)
+	}
+	// Without the alias row the same line cannot be repaired by tags alone.
+	if _, err := db.Exec("DELETE FROM alias"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = Resolve(context.Background(), db)
+	for _, x := range got {
+		if x.LineID == 14 && strings.Contains(x.ProjectHash, "APP-CHK") && strings.Contains(x.Trail, "alias") {
+			t.Errorf("alias still applied after deleting the alias table: %+v", x)
+		}
+	}
+}

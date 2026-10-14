@@ -43,6 +43,9 @@ const (
 	ProjectLZs         = "project_lzs"
 	AppAccounts        = "app_accounts"
 	EnvironmentRegions = "environment_regions"
+
+	// Aliases map invalid tag values to the correct code (spec §3.3).
+	Aliases = "aliases"
 )
 
 // Hierarchy names for CollectionSpec.Hierarchy.
@@ -50,7 +53,15 @@ const (
 	HierBiz     = "biz"
 	HierProject = "project"
 	HierCloud   = "cloud"
+	HierMeta    = "meta" // not a cost level: data about the other levels
 )
+
+// AliasLevels names the levels a tag alias can repair: the five Project levels, then the five
+// Biz levels, both top level first.
+var AliasLevels = []string{
+	"project", "app", "environment", "feature", "function",
+	"business_unit", "cost_center", "owner_team", "product_line", "customer",
+}
 
 // Ref kinds describe what a reference field means in the cost hierarchy.
 const (
@@ -220,6 +231,14 @@ var Schema = []CollectionSpec{
 		Refs: []RefSpec{
 			{Field: "environment", Target: Environments, Kind: RefMust},
 			{Field: "region", Target: Regions, Kind: RefMust},
+		}},
+
+	// Alias: code is the invalid tag value, level says which tag it was found in, and target
+	// is the correct node (a Project path hash for Project levels, a Biz code for Biz levels).
+	{Name: Aliases, Label: "Alias", Hierarchy: HierMeta, ScopeField: "level",
+		Attrs: []AttrSpec{
+			{Field: "level", Required: true, Choices: AliasLevels},
+			{Field: "target", Required: true},
 		}},
 }
 

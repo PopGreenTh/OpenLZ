@@ -33,8 +33,8 @@ func NewEngine() (*Engine, error) {
 
 // Attribute loads the node, evidence and line tables and runs the attribution query
 // (spec §6). The caller resolves distinct line combinations once and joins the result back.
-func (e *Engine) Attribute(ctx context.Context, nodes []attribution.Node, evidence []attribution.Evidence, lines []attribution.Line) ([]attribution.Result, error) {
-	if err := attribution.Load(ctx, e.db, nodes, evidence, lines); err != nil {
+func (e *Engine) Attribute(ctx context.Context, nodes []attribution.Node, evidence []attribution.Evidence, aliases []attribution.Alias, lines []attribution.Line) ([]attribution.Result, error) {
+	if err := attribution.Load(ctx, e.db, nodes, evidence, aliases, lines); err != nil {
 		return nil, err
 	}
 	return attribution.Resolve(ctx, e.db)
@@ -1374,4 +1374,70 @@ func (e *Engine) ExportToJSON(ctx context.Context, parquetPath string) ([]byte, 
 		return nil, err
 	}
 	return json.MarshalIndent(records, "", "  ")
+}
+
+// RawCostLine is one raw FinOps line as attribution and the CloudValueDelta see it.
+type RawCostLine struct {
+	AccountID, AccountName, Service, UsageDate, UsagePeriod, Metric, Frequency string
+	Currency, CSP, ConnectionID, Region, Zone, UsageType, ResourceID           string
+	PrimaryTag, SecondaryTag                                                   string
+	Amount                                                                     float64
+}
+
+// ReadRawFinOpsLines reads the raw FinOps parquet, one line per cost line. A line is identified
+// by its Cost Explorer grouping keys (tags are attributes, not part of the identity), and when
+// the file holds several versions of a line the latest recorded_at wins. Older files without
+// csp/connection_id/zone/resource_id read those columns as ”. Rows come back in key order.
+func (e *Engine) ReadRawFinOpsLines(ctx context.Context, parquetPath string) ([]RawCostLine, error) {
+	cols, err := e.parquetColumnSet(ctx, parquetPath)
+	if err != nil {
+		return nil, err
+	}
+	sel := func(name string) string {
+		if _, ok := cols[name]; ok {
+			return fmt.Sprintf("COALESCE(%s, '')", name)
+		}
+		return "CAST('' AS VARCHAR)"
+	}
+	recorded := "CAST(NULL AS TIMESTAMP)"
+	if _, ok := cols["recorded_at"]; ok {
+		recorded = "recorded_at"
+	}
+	q := fmt.Sprintf(`
+	WITH src AS (
+		SELECT %s AS account_id, %s AS account_name, %s AS service, %s AS usage_date, %s AS usage_period,
+			%s AS metric, %s AS frequency, %s AS currency, %s AS csp, %s AS connection_id, %s AS region,
+			%s AS zone, %s AS usage_type, %s AS resource_id, %s AS primary_tag, %s AS secondary_tag,
+			CAST(amount AS DOUBLE) AS amount, %s AS recorded_at
+		FROM read_parquet('%s')
+	), ranked AS (
+		SELECT *, ROW_NUMBER() OVER (
+			PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id
+			ORDER BY recorded_at DESC NULLS LAST, primary_tag, secondary_tag, amount) AS rn
+		FROM src
+	)
+	SELECT account_id, account_name, service, usage_date, usage_period, metric, frequency, currency, csp,
+		connection_id, region, zone, usage_type, resource_id, primary_tag, secondary_tag, amount
+	FROM ranked WHERE rn = 1
+	ORDER BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id`,
+		sel("account_id"), sel("account_name"), sel("service"), sel("usage_date"), sel("usage_period"),
+		sel("metric"), sel("frequency"), sel("currency"), sel("csp"), sel("connection_id"), sel("region"),
+		sel("zone"), sel("usage_type"), sel("resource_id"), sel("primary_tag"), sel("secondary_tag"),
+		recorded, cleanPath(parquetPath))
+	rows, err := e.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("read raw finops lines: %w", err)
+	}
+	defer rows.Close()
+	var out []RawCostLine
+	for rows.Next() {
+		var l RawCostLine
+		if err := rows.Scan(&l.AccountID, &l.AccountName, &l.Service, &l.UsageDate, &l.UsagePeriod, &l.Metric, &l.Frequency,
+			&l.Currency, &l.CSP, &l.ConnectionID, &l.Region, &l.Zone, &l.UsageType, &l.ResourceID,
+			&l.PrimaryTag, &l.SecondaryTag, &l.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }

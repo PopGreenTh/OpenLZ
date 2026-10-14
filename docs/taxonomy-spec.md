@@ -83,6 +83,9 @@ the cost goes to the explicit `UNALLOC` bucket (§4), never silently dropped.
 | Resource id/name | ResourceGroup code/name |
 
 An **alias table** maps invalid tag values to the correct code (e.g. a mistyped App code), per level.
+Each alias row has the invalid value as its Code, a `level` (`project`, `app`, `environment`, `feature`,
+`function`, `business_unit`, `cost_center`, `owner_team`, `product_line`, `customer`) and a `target`: a Project
+path hash of that depth for Project levels, a Biz code for Biz levels. An alias value is unique within its level.
 
 ### 3.4 Attributes
 | Level | Attribute | Required | Values |
@@ -214,4 +217,12 @@ earlier result so a report can show "as reported then" next to "as restated now"
   keeps the earlier decision of a single tenant, so the shared catalogs are simply one list.
 - **Environment under App** replaces the earlier many-to-many App ↔ Environment link; an
   Environment used by several Apps is now one Environment per App.
-- **Alias table** is specified (§3.3, §6) but not yet implemented in `internal/attribution`.
+- **Alias table** is implemented as the `aliases` collection and the `alias` input table of `internal/attribution`
+  (flag `alias` in the trail). A line repaired by an alias is not flagged `tag-corrected`.
+- **Unresolved** in the movement report means the evidence did not reach the Project, App or Environment of the
+  path; `FEAT-UNSPEC` and `FUNC-UNSPEC` are the normal case (no Cloud counterpart) and are not reported.
+- **Line identity** for the delta is the Cost Explorer grouping keys (account, service, period, metric, frequency,
+  region, zone, usage type, resource id). Tags are attributes of a line, so a restated tag is a `KEYS` change.
+  `input_hash` leaves out the resource group (it comes from the taxonomy, so a change to it is a mapping delta).
+- **REMOVED** applies only inside the date window of the incoming data: a stored line with a date between the
+  earliest and latest incoming date that is no longer present is marked inactive (kept for history).

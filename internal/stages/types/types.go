@@ -58,6 +58,7 @@ const (
 	StageFinOpsSenseCostAnomaly      = "finops-sense-costanomaly"
 	StageFinOpsAnalyzeVarianceImpact = "finops-analyze-varianceimpact"
 	StageFinOpsEnrichCostCenters     = "finops-enrich-costcenters"
+	StageFinOpsAttributeLines        = "finops-attribute-lines"
 	StageFinOpsEnforceTagging        = "finops-enforce-tagging"
 	StageFinOpsReportSummary         = "finops-report-summary"
 

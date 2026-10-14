@@ -499,3 +499,128 @@ func TestResolveCloudDerivesNothingFromProjectOrBiz(t *testing.T) {
 		t.Fatalf("the legacy matcher derives the region from the environment: %+v", legacy.Region)
 	}
 }
+
+func TestAliasTargetsAreValidated(t *testing.T) {
+	_, err := buildJSON(t, `{`+minimal+`,
+	  "aliases": [
+	    {"code": "A1X", "name": "ok", "level": "app", "target": "|P|A1|"},
+	    {"code": "A2X", "name": "wrong depth", "level": "app", "target": "|P|"},
+	    {"code": "BUX", "name": "ok biz", "level": "business_unit", "target": "BU"},
+	    {"code": "CCX", "name": "bad biz", "level": "cost_center", "target": "NOPE"},
+	    {"code": "LVL", "name": "bad level", "level": "galaxy", "target": "|P|"}
+	  ]}`)
+	if err == nil {
+		t.Fatal("expected alias errors")
+	}
+	for _, want := range []string{`Alias "A2X" (app): target "|P|" is not a valid App path`, `Alias "CCX" (cost_center): target "NOPE" is not a Cost Center code`, `level "galaxy" is not one of`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), `"A1X"`) || strings.Contains(err.Error(), `"BUX"`) {
+		t.Errorf("valid aliases must not be reported:\n%v", err)
+	}
+	// The same value may be an alias at two levels, but not twice at one level.
+	_, err = buildJSON(t, `{`+minimal+`,
+	  "aliases": [
+	    {"code": "X", "name": "one", "level": "app", "target": "|P|A1|"},
+	    {"code": "X", "name": "two", "level": "app", "target": "|P|A2|"}]}`)
+	if err == nil || !strings.Contains(err.Error(), "duplicate code within its level") {
+		t.Fatalf("duplicate alias: %v", err)
+	}
+}
+
+func TestAliasRows(t *testing.T) {
+	cat, err := buildJSON(t, `{`+minimal+`,
+	  "aliases": [
+	    {"code": "A1X", "name": "typo", "level": "app", "target": "|P|A1|"},
+	    {"code": "BUX", "name": "typo", "level": "business_unit", "target": "BU"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := cat.AliasRows()
+	want := []AliasRow{{"project", 2, "A1X", "A1"}, {"biz", 1, "BUX", "BU"}}
+	if len(rows) != 2 || rows[0] != want[0] || rows[1] != want[1] {
+		t.Fatalf("alias rows: %+v", rows)
+	}
+}
+
+func TestVersionIgnoresRowOrderButNotContent(t *testing.T) {
+	a, _ := ReadSnapshot(sampleFile)
+	b, _ := ReadSnapshot(sampleFile)
+	rows := b.Collections[Services]
+	rows[0], rows[1] = rows[1], rows[0]
+	if Version(a) != Version(b) {
+		t.Fatal("row order must not change the version")
+	}
+	b.Collections[Services][0]["name"] = "renamed"
+	if Version(a) == Version(b) {
+		t.Fatal("a renamed service must change the version")
+	}
+}
+
+func TestDiffClassifiesChanges(t *testing.T) {
+	load := func() *Snapshot {
+		s, err := ReadSnapshot(sampleFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	same, err := Diff(load(), load())
+	if err != nil || !same.Empty() || same.OldVersion != same.NewVersion {
+		t.Fatalf("identical snapshots: %+v %v", same, err)
+	}
+
+	// A renamed display text changes the version but not the attribution.
+	renamed := load()
+	renamed.Collections[Projects][0]["name"] = "Another name"
+	cs, _ := Diff(load(), renamed)
+	if !cs.Empty() || cs.OldVersion == cs.NewVersion {
+		t.Fatalf("name change: %+v", cs)
+	}
+
+	// A new override is a changed key and added evidence, not a node change.
+	o := load()
+	for _, r := range o.Collections[Resources] {
+		if r.Code() == "i-0111122223333a001" {
+			r["project_path"] = "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"
+		}
+	}
+	cs, _ = Diff(load(), o)
+	if _, ok := cs.Keys["resource:i-0111122223333a001"]; !ok || cs.NodeSetChanged() || !cs.EvidenceAdded {
+		t.Fatalf("override: %+v", cs)
+	}
+
+	// A new environment is an added node; removing it again removes the path.
+	n := load()
+	n.Add(Environments, Row{"code": "ENV-DR", "name": "DR", "app": "APP-LAKE"})
+	cs, _ = Diff(load(), n)
+	if len(cs.NodesAdded) != 1 || cs.NodesAdded[0] != "|PRJ-LAKEHOUSE|APP-LAKE|ENV-DR|" || !cs.AddedAnything() {
+		t.Fatalf("new environment: %+v", cs)
+	}
+	cs, _ = Diff(n, load())
+	if len(cs.NodesRemoved) != 1 || len(cs.ChangedPaths()) != 1 || cs.AddedAnything() {
+		t.Fatalf("removed environment: %+v", cs)
+	}
+
+	// Moving an App to another cost center changes the Biz refs of its paths.
+	m := load()
+	for _, r := range m.Collections[Apps] {
+		if r.Code() == "APP-LAKE" {
+			r["cost_center"] = "CC-CORE"
+		}
+	}
+	cs, _ = Diff(load(), m)
+	if len(cs.NodesModified) == 0 {
+		t.Fatalf("moved cost center: %+v", cs)
+	}
+
+	// Alias rows are changed keys.
+	a := load()
+	a.Add(Aliases, Row{"code": "Gateway", "name": "x", "level": "app", "target": "|PRJ-PAYMENTS|APP-GATEWAY|"})
+	cs, _ = Diff(load(), a)
+	if _, ok := cs.Keys[AliasKey("app", "Gateway")]; !ok || !cs.EvidenceAdded {
+		t.Fatalf("alias: %+v", cs)
+	}
+}

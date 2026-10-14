@@ -7,17 +7,20 @@
 //	node      every valid Project path prefix, one row per node, with the Biz codes its levels reference
 //	evidence  Cloud-to-Project links (kind override|rg|account|region|lz, key, node_id)
 //	lines     the cost lines to attribute (cloud values, project tags, biz tags)
+//	alias     per level, invalid tag value -> correct code (hier project|biz, lvl 1..5)
 //
 // Resolution order for each line:
 //
-//  0. Resource override: an explicit resource -> node mapping always wins.
-//  1. Tag anchor: every valid path is scored against the line's Project tags; deeper tags weigh
-//     more (1,2,4,8,16), so the most specific tag wins and a stale upper tag is corrected and flagged.
-//  2. Evidence refines the anchor, most specific first: resource group, biz tag, account, region.
-//     Evidence that contradicts what is already known is ignored and flagged ("name!"), never applied.
-//  3. LZ evidence is a last resort, used only when nothing else is known (an LZ hosts many projects).
-//  4. Common ancestor: a level survives only if every remaining candidate agrees on it.
-//  5. Missing levels are padded with <LEVEL>-UNSPEC, or <LEVEL>-UNALLOC when nothing resolved.
+//	A. Alias: an invalid tag value is replaced by the code the alias table maps it to, and the
+//	   line is flagged "alias" (a repaired tag is not "tag-corrected").
+//	0. Resource override: an explicit resource -> node mapping always wins.
+//	1. Tag anchor: every valid path is scored against the line's Project tags; deeper tags weigh
+//	   more (1,2,4,8,16), so the most specific tag wins and a stale upper tag is corrected and flagged.
+//	2. Evidence refines the anchor, most specific first: resource group, biz tag, account, region.
+//	   Evidence that contradicts what is already known is ignored and flagged ("name!"), never applied.
+//	3. LZ evidence is a last resort, used only when nothing else is known (an LZ hosts many projects).
+//	4. Common ancestor: a level survives only if every remaining candidate agrees on it.
+//	5. Missing levels are padded with <LEVEL>-UNSPEC, or <LEVEL>-UNALLOC when nothing resolved.
 //
 // The result is always built from real tree nodes, never by joining independently resolved codes,
 // so it cannot produce a combination that is not in the tree.
@@ -31,8 +34,9 @@ import (
 	"strings"
 )
 
-// Schema creates the three input tables.
+// Schema creates the input tables.
 const Schema = `
+CREATE TABLE alias (hier TEXT, lvl INT, v TEXT, code TEXT);
 CREATE TABLE node (node_id INT, lvl INT, p TEXT, a TEXT, e TEXT, f TEXT, fn TEXT, bu TEXT, cc TEXT, own TEXT, pl TEXT, cust TEXT);
 CREATE TABLE evidence (kind TEXT, k TEXT, node_id INT);
 CREATE TABLE lines (line_id INT, resource_id TEXT, rg TEXT, account TEXT, region TEXT, lz TEXT,
@@ -75,7 +79,9 @@ var (
 // SQL returns the portable attribution query.
 func SQL() string {
 	var b strings.Builder
-	b.WriteString("WITH\n-- 1: tag anchor. Score every valid path; deeper tags weigh more.\n")
+	b.WriteString("WITH\n-- A: alias table repairs invalid tag values.\n")
+	b.WriteString(aliasCTEs() + ",\n")
+	b.WriteString("-- 1: tag anchor. Score every valid path; deeper tags weigh more.\n")
 	b.WriteString("anchor_score AS (SELECT l.line_id, n.node_id, " + tagScore() + " AS score FROM lines l CROSS JOIN node n),\n")
 	b.WriteString("anchor_max AS (SELECT line_id, MAX(score) AS ms FROM anchor_score WHERE score > 0 GROUP BY line_id),\n")
 	b.WriteString("s0 AS (SELECT a.line_id, a.node_id FROM anchor_score a JOIN anchor_max m ON m.line_id = a.line_id AND a.score = m.ms),\n")
@@ -106,7 +112,36 @@ func SQL() string {
 		"{LAST}", prev,
 		"{AGG}", aggColumns(),
 	).Replace(tail))
-	return cteDef.ReplaceAllString(b.String(), "$1 AS MATERIALIZED (")
+	q := linesRef.ReplaceAllString(b.String(), "ln l")
+	return cteDef.ReplaceAllString(q, "$1 AS MATERIALIZED (")
+}
+
+// linesRef matches the alias-qualified lines table. Everything after the alias step reads the
+// aliased copy "ln" instead of the raw "lines" table.
+var linesRef = regexp.MustCompile(`\blines l\b`)
+
+// tagCols lists the tag columns of the lines table in alias order: hierarchy, level, column.
+var tagCols = []struct {
+	hier string
+	lvl  int
+	col  string
+}{
+	{"project", 1, "p"}, {"project", 2, "a"}, {"project", 3, "e"}, {"project", 4, "f"}, {"project", 5, "fn"},
+	{"biz", 1, "bu_tag"}, {"biz", 2, "cc_tag"}, {"biz", 3, "own_tag"}, {"biz", 4, "pl_tag"}, {"biz", 5, "cust_tag"},
+}
+
+// aliasCTEs renders the "lal" (alias lookups) and "ln" (aliased lines) CTEs.
+func aliasCTEs() string {
+	var lookups, applied, flags []string
+	for _, t := range tagCols {
+		lookups = append(lookups, fmt.Sprintf(
+			"(SELECT MIN(a.code) FROM alias a WHERE a.hier = '%s' AND a.lvl = %d AND a.v = r.%s) AS %s_al", t.hier, t.lvl, t.col, t.col))
+		applied = append(applied, fmt.Sprintf("COALESCE(x.%[1]s_al, x.%[1]s) AS %[1]s", t.col))
+		flags = append(flags, fmt.Sprintf("x.%s_al IS NOT NULL", t.col))
+	}
+	return "lal AS (SELECT r.*,\n    " + strings.Join(lookups, ",\n    ") + "\n  FROM lines r),\n" +
+		"ln AS (SELECT x.line_id, x.resource_id, x.rg, x.account, x.region, x.lz,\n    " + strings.Join(applied, ",\n    ") + ",\n" +
+		"    CASE WHEN " + strings.Join(flags, " OR ") + " THEN 1 ELSE 0 END AS aliased\n  FROM lal x)"
 }
 
 // cteDef matches the start of a CTE definition. Every CTE is materialized: the chain refers to
@@ -210,6 +245,7 @@ SELECT f.line_id,
     CASE WHEN f.p_u IS NULL THEN 'PL-UNALLOC' ELSE COALESCE(f.pl_f, 'PL-UNSPEC') END || '|' ||
     CASE WHEN f.p_u IS NULL THEN 'CUST-UNALLOC' ELSE COALESCE(f.cust_f, 'CUST-UNSPEC') END || '|' AS biz_hash,
   TRIM(
+    CASE WHEN EXISTS (SELECT 1 FROM lines l WHERE l.line_id = f.line_id AND l.aliased = 1) THEN 'alias ' ELSE '' END ||
     CASE WHEN EXISTS (SELECT 1 FROM ov o WHERE o.line_id = f.line_id) THEN 'override ' ELSE '' END ||
     CASE WHEN EXISTS (SELECT 1 FROM s0 x WHERE x.line_id = f.line_id) THEN 'tags ' ELSE '' END ||
     (SELECT piece FROM t_rg t WHERE t.line_id = f.line_id) || (SELECT piece FROM t_biz t WHERE t.line_id = f.line_id) ||

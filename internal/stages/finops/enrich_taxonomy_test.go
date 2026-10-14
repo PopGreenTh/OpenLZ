@@ -265,3 +265,35 @@ func keys(m map[string]cloud.EnrichedRecord) []string {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+func TestAttributeLinesStageIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	rawPath := filepath.Join(dir, "finops_raw.parquet")
+	engine, err := duckdb.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	rec := cloud.CostRecord{
+		AccountID: "777788889999", AccountName: "lz-prod-data", Service: "Amazon Simple Storage Service",
+		UsageDate: "2026-09-22", Amount: 150, Unit: "USD", Currency: "USD", CSP: "AWS",
+		Region: "ap-southeast-1", UsageType: "TimedStorage-ByteHrs", Timestamp: time.Now(),
+	}
+	if err := engine.WriteFinOpsParquet(ctx, []cloud.CostRecord{rec}, rawPath); err != nil {
+		t.Fatal(err)
+	}
+	in := AttributeLinesInput{
+		InputPath:    rawPath,
+		TaxonomyPath: filepath.Join("..", "..", "..", "taxonomy", "taxonomy.json"),
+		StorePath:    filepath.Join(dir, "sub", "attribution.duckdb"),
+	}
+	first, err := ExecuteAttributeLines(ctx, in)
+	if err != nil || first.RecordCount != 1 {
+		t.Fatalf("first run: %v %+v", err, first)
+	}
+	second, err := ExecuteAttributeLines(ctx, in)
+	if err != nil || second.RecordCount != 0 || !strings.Contains(second.Message, "0 rows written") {
+		t.Fatalf("second run must write nothing: %v %+v", err, second)
+	}
+}

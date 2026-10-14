@@ -127,3 +127,37 @@ func (c *Catalog) BizSlots(hash string) [5]Slot {
 	}
 	return out
 }
+
+// AliasRow repairs one invalid tag value at one level (spec §3.3, §6 step 1).
+type AliasRow struct {
+	Hier  string // "project" or "biz"
+	Level int    // 1..5 within the hierarchy
+	Value string // the invalid tag value as sensed
+	Code  string // the correct code at that level
+}
+
+// AliasRows lists the alias table for the attribution query.
+func (c *Catalog) AliasRows() []AliasRow {
+	var out []AliasRow
+	nProject := len(Levels(HierProject))
+	for _, a := range c.ordered[Aliases] {
+		level := indexOf(AliasLevels, a.attrs["level"])
+		target := a.attrs["target"]
+		row := AliasRow{Value: a.id}
+		if level < nProject {
+			n := c.byPath[key(target)]
+			if n == nil {
+				continue
+			}
+			row.Hier, row.Level, row.Code = "project", level+1, n.id
+		} else {
+			n := c.lookup(Levels(HierBiz)[level-nProject], target)
+			if n == nil {
+				continue
+			}
+			row.Hier, row.Level, row.Code = "biz", level-nProject+1, n.id
+		}
+		out = append(out, row)
+	}
+	return out
+}

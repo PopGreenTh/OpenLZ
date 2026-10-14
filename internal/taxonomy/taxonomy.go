@@ -240,12 +240,35 @@ func Build(snap *Snapshot) (*Catalog, error) {
 			}
 		}
 	}
+	errs = append(errs, c.checkAliases()...)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	c.checkBiz()
 	c.checkCloud()
 	return c, nil
+}
+
+// checkAliases validates alias targets: a Project path of the alias level's depth, or a Biz code.
+func (c *Catalog) checkAliases() []error {
+	var errs []error
+	projectLevels, bizLevels := Levels(HierProject), Levels(HierBiz)
+	for _, a := range c.ordered[Aliases] {
+		level := indexOf(AliasLevels, a.attrs["level"])
+		target := a.attrs["target"]
+		if level < 0 || target == "" {
+			continue // reported by the attribute checks
+		}
+		where := fmt.Sprintf("Alias %q (%s)", a.id, a.attrs["level"])
+		if level < len(projectLevels) {
+			if n := c.byPath[key(target)]; n == nil || n.coll != projectLevels[level] {
+				errs = append(errs, fmt.Errorf("%s: target %q is not a valid %s path", where, target, specLabel(projectLevels[level])))
+			}
+		} else if c.lookup(bizLevels[level-len(projectLevels)], target) == nil {
+			errs = append(errs, fmt.Errorf("%s: target %q is not a %s code", where, target, specLabel(bizLevels[level-len(projectLevels)])))
+		}
+	}
+	return errs
 }
 
 func checkAttr(a AttrSpec, v string) error {

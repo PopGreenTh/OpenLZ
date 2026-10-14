@@ -92,6 +92,8 @@ OpenLZ/
 │   │   └── mocks.go        # Offline mock data generators
 │   ├── cache/              # Persistent DuckDB API fee cache ($0.01 guardrail)
 │   ├── cloud/              # Core domain models (CostRecord, SecurityRecord, CloudOpsRecord)
+│   ├── attribution/        # Portable SQL that attributes cost lines to Project/Biz paths (spec §6)
+│   ├── delta/              # CloudValueDelta: per-line attribution store, history, movement report (spec §8)
 │   ├── duckdb/             # In-memory OLAP engine & Parquet persistence
 │   ├── powerquery/         # Power BI & Excel Power Query (.m) formula generators
 │   ├── report/             # Report generators (Markdown, console table, CSV)

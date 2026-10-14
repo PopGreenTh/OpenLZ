@@ -22,6 +22,15 @@ type Evidence struct {
 	NodeID int
 }
 
+// Alias is one row of the alias table: Value is the invalid tag found at Level of Hier
+// ("project" or "biz"); Code is the correct code at that level.
+type Alias struct {
+	Hier  string
+	Level int
+	Value string
+	Code  string
+}
+
 // Line is one row of the lines table: the inputs attribution reads for one cost line.
 // Empty strings are stored as NULL.
 type Line struct {
@@ -31,9 +40,9 @@ type Line struct {
 	BUTag, CCTag, OwnTag, PLTag, CustTag string // Biz tags
 }
 
-// Load (re)creates the node, evidence and lines tables on db and fills them.
-func Load(ctx context.Context, db *sql.DB, nodes []Node, evidence []Evidence, lines []Line) error {
-	for _, t := range []string{"node", "evidence", "lines"} {
+// Load (re)creates the node, evidence, alias and lines tables on db and fills them.
+func Load(ctx context.Context, db *sql.DB, nodes []Node, evidence []Evidence, aliases []Alias, lines []Line) error {
+	for _, t := range []string{"node", "evidence", "alias", "lines"} {
 		if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS "+t); err != nil {
 			return fmt.Errorf("drop %s: %w", t, err)
 		}
@@ -74,6 +83,13 @@ func Load(ctx context.Context, db *sql.DB, nodes []Node, evidence []Evidence, li
 	}
 	if err := ins("INSERT INTO evidence VALUES (?,?,?)", rows); err != nil {
 		return fmt.Errorf("load evidence: %w", err)
+	}
+	rows = nil
+	for _, a := range aliases {
+		rows = append(rows, []any{a.Hier, a.Level, a.Value, a.Code})
+	}
+	if err := ins("INSERT INTO alias VALUES (?,?,?,?)", rows); err != nil {
+		return fmt.Errorf("load alias: %w", err)
 	}
 	rows = nil
 	for _, l := range lines {

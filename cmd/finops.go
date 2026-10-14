@@ -35,6 +35,7 @@ var (
 	finopsEnrichPath       string
 	finopsTaxonomy         string
 	finopsLegacyResolver   bool
+	finopsAttrStore        string
 	finopsAuditPath        string
 	finopsThreshold        float64
 	finopsDryRun           bool
@@ -134,6 +135,27 @@ var finopsAnalyzeCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("[FinOps:Analyze] %s\n", res.Message)
+		return nil
+	},
+}
+
+var finopsAttributeCmd = &cobra.Command{
+	Use:   "attribute",
+	Short: "Keep the attribution of every raw cost line current (CloudValueDelta)",
+	Long: `Classifies what changed since the last run (new lines, restated amounts, changed keys,
+removed lines, and the taxonomy edits between the previous and the current snapshot),
+re-attributes only the lines that need it, keeps every earlier result in a history table and
+prints the cost that moved between projects. Run it after finops sense.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		res, err := finopsstages.ExecuteAttributeLines(context.Background(), finopsstages.AttributeLinesInput{
+			InputPath:    finopsRawPath,
+			TaxonomyPath: finopsTaxonomy,
+			StorePath:    finopsAttrStore,
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("[FinOps:Attribute] %s\n", res.Message)
 		return nil
 	},
 }
@@ -301,6 +323,10 @@ func init() {
 
 	finopsCmd.AddCommand(finopsSenseCmd)
 	finopsCmd.AddCommand(finopsAnalyzeCmd)
+	finopsAttributeCmd.Flags().StringVar(&finopsRawPath, "input", "data/finops_raw.parquet", "Input raw FinOps parquet file path")
+	finopsAttributeCmd.Flags().StringVar(&finopsTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy.json)")
+	finopsAttributeCmd.Flags().StringVar(&finopsAttrStore, "store", finopsstages.DefaultAttributionStore, "DuckDB file holding the attribution results and history")
+	finopsCmd.AddCommand(finopsAttributeCmd)
 	finopsCmd.AddCommand(finopsEnrichCmd)
 	finopsCmd.AddCommand(finopsEnforceCmd)
 	finopsCmd.AddCommand(finopsReportCmd)
