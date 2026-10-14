@@ -153,13 +153,13 @@ The code implements everything in §2 above. The spec adds the following; each i
    - `grep -rni tenant --include=*.go .` must return nothing when done (except the one-release `"tenant"` read in snapshot JSON).
 4. **Code naming** (spec §1): the business key is called **Code**. In the snapshot JSON, rename the row key `"id"` → `"code"` and keep reading `"id"` as an alias for one release. Rename `Row.ID()` → `Row.Code()`. Keep the internal Go `Slot.ID` and the enriched `*_id` columns: they are output column names and must not change. Resources keep the key `"code"` too; its value is the cloud resource id.
 5. **Docs:** update the hierarchy and relation lists in `GEMINI.md` §2.5 to point at the spec.
-6. **New level LZ / Connection** between App and Environment/Account (spec §2–§4). ⚠ Its relations are marked *(proposed)* in the spec; **confirm them with the user before coding this item.** Once confirmed:
-   - Collections `landing_zones` and `connections`. Refs: `connections.landing_zone` (can → `landing_zones`), `connections.csp` (must → `csps`), `accounts.connection` (can → `connections`), `environments.landing_zone` (can → `landing_zones`).
-   - `connections` needs a **non-ref attribute** `currency` (ISO 4217, required). `Schema` only knows id/name/refs today, so add `Attrs []AttrSpec{Field, Required}` to `CollectionSpec`. Validate attributes in `Build`, and carry them through snapshot JSON and the Directus bootstrap (string field).
+6. **New levels CSP-on-top and LZ / Connection** (spec §2–§4, confirmed 2026-10-14). The project hierarchy becomes Project → App → **CSP → LZ/Connection** → Environment/Account → **Region** → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource. Each LZ has one CSP and one billing currency.
+   - Move `csps` up in `Schema` so it comes before `landing_zones`. Add `landing_zones` (ref `csp`: RefParent → `csps`) and `connections` (ref `landing_zone`: RefParent → `landing_zones`). Add `environments.landing_zone` (RefParent → `landing_zones`) and `accounts.connection` (RefCan → `connections`). `regions.csp` stays.
+   - `landing_zones` needs a **non-ref attribute** `currency` (ISO 4217, required). `Schema` only knows id/name/refs today, so add `Attrs []AttrSpec{Field, Required}` to `CollectionSpec`. Validate attributes in `Build`, and carry them through snapshot JSON and the Directus bootstrap (string field).
+   - LZ and Connection are organizational, not `Catalog`, so top-down CSP → LZ → Connection and LZ → Environment work through `narrow`. CSP stays `Catalog` (it is never filled top-down; it is filled bottom-up from LZ or Region).
    - Raw FinOps gains `connection_id`: the payer account id in payer mode, empty otherwise. Thread it through `CostRecord`, `insertFinOpsRecords` (19 → 20 columns), the upsert partition, Analyze pass-through and `AnalyzedCostRow`, and the raw M scripts.
-   - `Input.ConnectionID`; `Output.LZ`, `Output.Connection`; enriched columns `lz_id, lz, connection_id, connection, billing_currency` (43 → 48 after item 2).
-   - Bottom-up: Account → Connection → LZ, Environment → LZ. Top-down: LZ → Connection, LZ → Environment (LZ and Connection are organizational, not catalog).
-   - Warnings: an Account's Connection in a different LZ than its Environment. A cost row whose `currency` ≠ its Connection's currency is reported by Enrich (log a warning with counts, keep the row).
+   - `Input.ConnectionID`; `Output.LZ`, `Output.Connection`; enriched columns `lz_id, lz, connection_id, connection, billing_currency` (43 → 48 after item 2). `billing_currency` is the LZ's currency.
+   - Warnings: an Account's Connection in a different LZ than its Environment (`Build`). In Enrich, log counts of rows whose `currency` ≠ their LZ's currency, and of rows whose Region's CSP ≠ their LZ's CSP; keep the rows.
 
 Acceptance: all tests pass. `openlz taxonomy validate` passes with 0 warnings. No `--tenant` flag remains. The mock smoke test in §3 shows `product_line_id` filled for resource rows whose ResourceGroup has a CustomerFunc.
 
@@ -289,7 +289,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 ## 5. Product decisions (answered 2026-10-14)
 - **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
 - **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
-- **LZ / Connection (2026-10-14):** new level between App and Environment/Account; a Connection bills in exactly one currency. Relations and currency rules are **proposed** in the spec and awaiting confirmation (Task 0 item 6).
+- **CSP and LZ / Connection (2026-10-14):** each LZ has exactly one CSP, so CSP moves up to sit above LZ; Region stays below Account. Account maps to its billing Connection; Environment is under an LZ; **one billing currency per LZ** (Task 0 item 6).
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
 - **Q3 – environments vs apps:** there are both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
