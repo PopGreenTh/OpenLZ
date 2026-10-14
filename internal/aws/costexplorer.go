@@ -319,6 +319,7 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 		tagKey    string
 	}
 	var passes []groupPass
+	withResources := false
 
 	switch groupBy {
 	case "LINKED_ACCOUNT_SERVICE", "ACCOUNT_SERVICE", "BOTH":
@@ -333,6 +334,50 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 		passes = append(passes, groupPass{
 			groupDefs: []types.GroupDefinition{
 				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+			},
+		})
+	case "SERVICE_REGION":
+		passes = append(passes, groupPass{
+			groupDefs: []types.GroupDefinition{
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("REGION")},
+			},
+		})
+	case "SERVICE_USAGE_TYPE":
+		passes = append(passes, groupPass{
+			groupDefs: []types.GroupDefinition{
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("USAGE_TYPE")},
+			},
+		})
+	case "RESOURCE", "SERVICE_RESOURCE", "RESOURCE_ID":
+		// Resource-level costs (GetCostAndUsageWithResources). Requires resource-level
+		// data to be enabled in Cost Explorer settings; only the last 14 days are available.
+		if freq == "MONTHLY" {
+			return nil, fmt.Errorf("resource-level Cost Explorer data supports DAILY or HOURLY granularity, not MONTHLY")
+		}
+		withResources = true
+		if minStart := time.Now().UTC().AddDate(0, 0, -14).Format("2006-01-02"); startDate < minStart {
+			slog.WarnContext(ctx, "Resource-level Cost Explorer data covers the last 14 days only; clamping start date",
+				"requestedStart", startDate, "start", minStart)
+			startDate = minStart
+		}
+		if ceFilter == nil {
+			// GetCostAndUsageWithResources requires a filter.
+			if opts.PayerAccountID == "" && accountID != "" {
+				ceFilter = &types.Expression{Dimensions: &types.DimensionValues{
+					Key: types.DimensionLinkedAccount, Values: []string{accountID},
+				}}
+			} else {
+				ceFilter = &types.Expression{Dimensions: &types.DimensionValues{
+					Key: types.DimensionRecordType, Values: []string{"Usage"},
+				}}
+			}
+		}
+		passes = append(passes, groupPass{
+			groupDefs: []types.GroupDefinition{
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+				{Type: types.GroupDefinitionTypeDimension, Key: aws.String("RESOURCE_ID")},
 			},
 		})
 	case "LINKED_ACCOUNT":
@@ -415,26 +460,15 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 		err := ExecuteWithRetry(ctx, func() error {
 			var nextToken *string
 			for {
-				input := &costexplorer.GetCostAndUsageInput{
-					TimePeriod: &types.DateInterval{
-						Start: aws.String(startDate),
-						End:   aws.String(endDate),
-					},
-					Granularity:   granularity,
-					Metrics:       []string{metric},
-					GroupBy:       groupDefs,
-					Filter:        ceFilter,
-					NextPageToken: nextToken,
-				}
-
-				slog.DebugContext(ctx, "Calling Cost Explorer GetCostAndUsage",
+				slog.DebugContext(ctx, "Calling Cost Explorer",
 					"groupBy", groupBy,
+					"withResources", withResources,
 					"tagKey", tagKey,
 					"hasNextToken", nextToken != nil,
 				)
-				resp, callErr := c.costExplorer.GetCostAndUsage(ctx, input)
+				resp, callErr := c.getCostAndUsage(ctx, withResources, startDate, endDate, granularity, metric, groupDefs, ceFilter, nextToken)
 				if callErr != nil {
-					slog.ErrorContext(ctx, "Cost Explorer GetCostAndUsage call failed", "error", callErr)
+					slog.ErrorContext(ctx, "Cost Explorer call failed", "withResources", withResources, "error", callErr)
 					return callErr
 				}
 				slog.DebugContext(ctx, "Cost Explorer response page received",
@@ -447,16 +481,26 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 					for _, group := range resultByTime.Groups {
 						svcName := "Unknown"
 						rowAccountID := accountID
+						rowRegion := c.cfg.Region
+						rowUsageType := "Usage"
+						rowResource := ""
 						var tagVal string
 
 						for idx, key := range group.Keys {
 							if idx < len(groupDefs) {
 								def := groupDefs[idx]
 								if def.Type == types.GroupDefinitionTypeDimension {
-									if *def.Key == "SERVICE" {
+									switch *def.Key {
+									case "SERVICE":
 										svcName = key
-									} else if *def.Key == "LINKED_ACCOUNT" {
+									case "LINKED_ACCOUNT":
 										rowAccountID = key
+									case "REGION":
+										rowRegion = key
+									case "USAGE_TYPE":
+										rowUsageType = key
+									case "RESOURCE_ID":
+										rowResource = key
 									}
 								} else if def.Type == types.GroupDefinitionTypeTag {
 									tKey := *def.Key
@@ -487,7 +531,7 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 						}
 
 						dailyAmount, daysInPeriod, usageDate, usagePeriod := computeDailyMetrics(freq, amount, rawStart, endDate)
-						mergeKey := fmt.Sprintf("%s|%s|%s|%s|%s", rowAccountID, svcName, usageDate, usagePeriod, metric)
+						mergeKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", rowAccountID, svcName, usageDate, usagePeriod, metric, rowRegion, rowUsageType, rowResource)
 
 						if existing, ok := recordMap[mergeKey]; ok {
 							// If record exists from prior tag pass, enrich with this tag without duplicating amount
@@ -524,8 +568,10 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 								Frequency:    freq,
 								Unit:         unit,
 								Currency:     "USD",
-								Region:       c.cfg.Region,
-								UsageType:    "Usage",
+								CSP:          "AWS",
+								Region:       rowRegion,
+								UsageType:    rowUsageType,
+								ResourceID:   rowResource,
 								PrimaryTag:   primaryVal,
 								SecondaryTag: secondaryVal,
 								BusinessUnit: "Untagged",
@@ -593,6 +639,45 @@ func (c *Client) FetchCostsWithOptions(ctx context.Context, opts FetchCostOption
 		"frequency", freq,
 	)
 	return allRecords, nil
+}
+
+// getCostAndUsage calls GetCostAndUsage, or GetCostAndUsageWithResources for resource-level data.
+func (c *Client) getCostAndUsage(
+	ctx context.Context,
+	withResources bool,
+	startDate, endDate string,
+	granularity types.Granularity,
+	metric string,
+	groupDefs []types.GroupDefinition,
+	filter *types.Expression,
+	nextToken *string,
+) (*costexplorer.GetCostAndUsageOutput, error) {
+	period := &types.DateInterval{Start: aws.String(startDate), End: aws.String(endDate)}
+	if !withResources {
+		return c.costExplorer.GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
+			TimePeriod:    period,
+			Granularity:   granularity,
+			Metrics:       []string{metric},
+			GroupBy:       groupDefs,
+			Filter:        filter,
+			NextPageToken: nextToken,
+		})
+	}
+	out, err := c.costExplorer.GetCostAndUsageWithResources(ctx, &costexplorer.GetCostAndUsageWithResourcesInput{
+		TimePeriod:    period,
+		Granularity:   granularity,
+		Metrics:       []string{metric},
+		GroupBy:       groupDefs,
+		Filter:        filter,
+		NextPageToken: nextToken,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &costexplorer.GetCostAndUsageOutput{
+		ResultsByTime: out.ResultsByTime,
+		NextPageToken: out.NextPageToken,
+	}, nil
 }
 
 // fetchHierarchicalCosts executes Hierarchical Two-Round Sense (Round 1: Account+PrimaryTag -> Round 2: Service+SecondaryTag).
@@ -947,6 +1032,7 @@ func (c *Client) fetchHierarchicalCosts(
 								Frequency:    freq,
 								Unit:         unit,
 								Currency:     "USD",
+								CSP:          "AWS",
 								Region:       c.cfg.Region,
 								UsageType:    "Usage",
 								PrimaryTag:   p.projectTag,
@@ -1153,6 +1239,7 @@ func (c *Client) fetchHierarchicalCosts(
 									Frequency:    freq,
 									Unit:         unit,
 									Currency:     "USD",
+									CSP:          "AWS",
 									Region:       c.cfg.Region,
 									UsageType:    "Usage",
 									PrimaryTag:   "Untagged",

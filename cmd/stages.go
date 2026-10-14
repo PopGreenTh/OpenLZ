@@ -82,8 +82,7 @@ func init() {
 		fAnaThresh          float64
 		fEnrIn              string
 		fEnrOut             string
-		fEnrProjectTax      string
-		fEnrBusinessTax     string
+		fEnrTaxonomy        string
 		fEnfIn              string
 		fEnfOut             string
 		fEnfDry             bool
@@ -274,11 +273,10 @@ func init() {
 				outPath = types.AppendTenantToPath(outPath, rootTenant)
 			}
 			res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-				InputPath:            inPath,
-				OutputPath:           outPath,
-				ProjectTaxonomyPath:  fEnrProjectTax,
-				BusinessTaxonomyPath: fEnrBusinessTax,
-				Tenant:               rootTenant,
+				InputPath:    inPath,
+				OutputPath:   outPath,
+				TaxonomyPath: fEnrTaxonomy,
+				Tenant:       rootTenant,
 			})
 			if err != nil {
 				return err
@@ -289,8 +287,7 @@ func init() {
 	}
 	cmdFinOpsEnr.Flags().StringVar(&fEnrIn, "input", "data/finops_anomalies.parquet", "Input anomalies parquet path")
 	cmdFinOpsEnr.Flags().StringVar(&fEnrOut, "output", "data/finops_enriched.parquet", "Output enriched parquet path")
-	cmdFinOpsEnr.Flags().StringVar(&fEnrProjectTax, "project-taxonomy", "", "Project cost hierarchy JSON (default taxonomy/project_taxonomy.json when present)")
-	cmdFinOpsEnr.Flags().StringVar(&fEnrBusinessTax, "business-taxonomy", "", "Business cost hierarchy JSON (default taxonomy/business_taxonomy.json when present)")
+	cmdFinOpsEnr.Flags().StringVar(&fEnrTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
 	RootCmd.AddCommand(cmdFinOpsEnr)
 
 	// 4. finops-enforce-tagging

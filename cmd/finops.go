@@ -33,8 +33,7 @@ var (
 	finopsRawPath          string
 	finopsAnomPath         string
 	finopsEnrichPath       string
-	finopsProjectTaxonomy  string
-	finopsBusinessTaxonomy string
+	finopsTaxonomy         string
 	finopsAuditPath        string
 	finopsThreshold        float64
 	finopsDryRun           bool
@@ -177,11 +176,10 @@ var finopsEnrichCmd = &cobra.Command{
 		}
 
 		res, err := finopsstages.ExecuteEnrichCostCenters(ctx, finopsstages.EnrichCostCentersInput{
-			InputPath:            anomPath,
-			OutputPath:           enrichPath,
-			ProjectTaxonomyPath:  finopsProjectTaxonomy,
-			BusinessTaxonomyPath: finopsBusinessTaxonomy,
-			Tenant:               tenant,
+			InputPath:    anomPath,
+			OutputPath:   enrichPath,
+			TaxonomyPath: finopsTaxonomy,
+			Tenant:       tenant,
 		})
 		if err != nil {
 			return err
@@ -334,8 +332,7 @@ func init() {
 	// Flags for enrich
 	finopsEnrichCmd.Flags().StringVar(&finopsAnomPath, "input", "data/finops_anomalies.parquet", "Input anomalies parquet file path")
 	finopsEnrichCmd.Flags().StringVar(&finopsEnrichPath, "output", "data/finops_enriched.parquet", "Output enriched parquet file path")
-	finopsEnrichCmd.Flags().StringVar(&finopsProjectTaxonomy, "project-taxonomy", "", "Project cost hierarchy JSON (default taxonomy/project_taxonomy.json when present)")
-	finopsEnrichCmd.Flags().StringVar(&finopsBusinessTaxonomy, "business-taxonomy", "", "Business cost hierarchy JSON (default taxonomy/business_taxonomy.json when present)")
+	finopsEnrichCmd.Flags().StringVar(&finopsTaxonomy, "taxonomy", "", "Cost taxonomy snapshot JSON (default taxonomy/taxonomy[_<tenant>].json when present)")
 
 	// Flags for enforce
 	finopsEnforceCmd.Flags().StringVar(&finopsEnrichPath, "input", "data/finops_enriched.parquet", "Input enriched parquet file path")

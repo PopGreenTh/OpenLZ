@@ -26,18 +26,19 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 		usageBase float64
 		usageUnit string
 		usageType string
+		resource  string // resource id template; %s is the account id
 		bu        string
 		proj      string
 		app       string
 		env       string
 	}
 	services := []mockSvc{
-		{"Amazon Elastic Compute Cloud - Compute", 120.50, 24.0, "Hours", "BoxUsage:t3.medium", "Core Platform", "CloudMigration", "PaymentGateway", "Production"},
-		{"Amazon Simple Storage Service", 45.20, 150.0, "GB-Mo", "TimedStorage-ByteHrs", "Data Engineering", "ProjectOmega", "DataLakehouse", "Production"},
-		{"Amazon Relational Database Service", 88.75, 24.0, "Hours", "InstanceUsage:db.r5.large", "Digital Products", "ProjectAlpha", "InventoryService", "Staging"},
-		{"Amazon DynamoDB", 22.10, 1500000.0, "Requests", "ReadRequestUnits", "Digital Products", "ProjectBeta", "UserAuth", "Development"},
-		{"AWS Lambda", 12.40, 2500000.0, "Requests", "Invocations", "Core Platform", "ServerlessAPI", "OrderProcessor", "Production"},
-		{"Amazon CloudWatch", 34.00, 500.0, "Metrics", "MetricMonitorUsage", "Security Operations", "Observability", "TelemetryAgent", "Production"},
+		{"Amazon Elastic Compute Cloud - Compute", 120.50, 24.0, "Hours", "BoxUsage:t3.medium", "i-0%sa001", "Core Platform", "CloudMigration", "PaymentGateway", "Production"},
+		{"Amazon Simple Storage Service", 45.20, 150.0, "GB-Mo", "TimedStorage-ByteHrs", "arn:aws:s3:::lz-%s-datalake", "Data Engineering", "ProjectOmega", "DataLakehouse", "Production"},
+		{"Amazon Relational Database Service", 88.75, 24.0, "Hours", "InstanceUsage:db.r5.large", "arn:aws:rds:ap-southeast-1:%s:db:inventory", "Digital Products", "ProjectAlpha", "InventoryService", "Staging"},
+		{"Amazon DynamoDB", 22.10, 1500000.0, "Requests", "ReadRequestUnits", "arn:aws:dynamodb:ap-southeast-1:%s:table/user-auth", "Digital Products", "ProjectBeta", "UserAuth", "Development"},
+		{"AWS Lambda", 12.40, 2500000.0, "Requests", "Invocations", "arn:aws:lambda:ap-southeast-1:%s:function:order-processor", "Core Platform", "ServerlessAPI", "OrderProcessor", "Production"},
+		{"Amazon CloudWatch", 34.00, 500.0, "Metrics", "MetricMonitorUsage", "arn:aws:cloudwatch:ap-southeast-1:%s:metric-stream/telemetry", "Security Operations", "Observability", "TelemetryAgent", "Production"},
 	}
 
 	startDate := opts.StartDate
@@ -53,6 +54,12 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 	freq := strings.ToUpper(strings.TrimSpace(opts.Frequency))
 	if freq == "" {
 		freq = "DAILY"
+	}
+
+	withResources := false
+	switch strings.ToUpper(strings.TrimSpace(opts.GroupBy)) {
+	case "RESOURCE", "SERVICE_RESOURCE", "RESOURCE_ID":
+		withResources = true
 	}
 
 	accounts := []string{opts.AccountID}
@@ -84,7 +91,11 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 			} else {
 				base = s.costBase
 				unit = "USD"
-				usageType = "DailyCost"
+				usageType = s.usageType
+			}
+			resourceID := ""
+			if withResources {
+				resourceID = fmt.Sprintf(s.resource, acc)
 			}
 
 			jitterRatio := ((rand.Float64() * 0.2) - 0.1) // +/- 10%
@@ -116,8 +127,10 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 						Frequency:    freq,
 						Unit:         unit,
 						Currency:     "USD",
+						CSP:          "AWS",
 						Region:       DEFAULT_REGION,
 						UsageType:    usageType,
+						ResourceID:   resourceID,
 						PrimaryTag:   s.proj,
 						SecondaryTag: s.app,
 						BusinessUnit: s.bu,
@@ -163,8 +176,10 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 					Frequency:    freq,
 					Unit:         unit,
 					Currency:     "USD",
+					CSP:          "AWS",
 					Region:       DEFAULT_REGION,
 					UsageType:    usageType,
+					ResourceID:   resourceID,
 					PrimaryTag:   s.proj,
 					SecondaryTag: s.app,
 					BusinessUnit: s.bu,
@@ -207,8 +222,10 @@ func GenerateMockCostRecordsWithOptions(opts FetchCostOptions) []cloud.CostRecor
 					Frequency:    freq,
 					Unit:         unit,
 					Currency:     "USD",
+					CSP:          "AWS",
 					Region:       DEFAULT_REGION,
 					UsageType:    usageType,
+					ResourceID:   resourceID,
 					PrimaryTag:   s.proj,
 					SecondaryTag: s.app,
 					BusinessUnit: s.bu,

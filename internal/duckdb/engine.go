@@ -89,8 +89,10 @@ func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, reco
 		"frequency VARCHAR",
 		"unit VARCHAR",
 		"currency VARCHAR",
+		"csp VARCHAR",
 		"region VARCHAR",
 		"usage_type VARCHAR",
+		"resource_id VARCHAR",
 		"primary_tag VARCHAR",
 		"secondary_tag VARCHAR",
 		"recorded_at DATETIME",
@@ -140,6 +142,10 @@ func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, reco
 		if usagePeriod == "" {
 			usagePeriod = r.UsageDate
 		}
+		csp := r.CSP
+		if csp == "" {
+			csp = "AWS"
+		}
 
 		// Resolve primary_tag and secondary_tag
 		primaryTag := r.PrimaryTag
@@ -177,8 +183,10 @@ func (e *Engine) insertFinOpsRecords(ctx context.Context, tableName string, reco
 			frequency,
 			r.Unit,
 			r.Currency,
+			csp,
 			r.Region,
 			r.UsageType,
+			r.ResourceID,
 			primaryTag,
 			secondaryTag,
 			ts,
@@ -221,7 +229,7 @@ func (e *Engine) WriteFinOpsParquet(ctx context.Context, records []cloud.CostRec
 
 // UpsertFinOpsParquet merges incoming CostRecords into an existing Parquet file.
 // If the destination parquet file does not exist, it writes a new one.
-// If it exists, records with identical business keys (account_id, service, usage_date, usage_period, metric, frequency, region, usage_type, primary_tag, secondary_tag)
+// If it exists, records with identical business keys (account_id, service, usage_date, usage_period, metric, frequency, csp, region, usage_type, resource_id, primary_tag, secondary_tag)
 // are replaced with the latest record ordered by recorded_at DESC.
 func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRecord, outputPath string) error {
 	if err := ensureDir(outputPath); err != nil {
@@ -241,37 +249,41 @@ func (e *Engine) UpsertFinOpsParquet(ctx context.Context, records []cloud.CostRe
 	tempParquet := outputPath + ".tmp.parquet"
 	defer os.Remove(tempParquet)
 
+	cols, err := e.parquetColumnSet(ctx, outputPath)
+	if err != nil {
+		return err
+	}
+	// Files written before csp/resource_id existed are upgraded on merge.
+	existingSelect := fmt.Sprintf(`account_id, account_name, service, usage_date, usage_period,
+				amount, daily_amount, days_in_period, metric, frequency,
+				unit, currency, %s, region, usage_type, %s, primary_tag, secondary_tag, recorded_at`,
+		columnOr(cols, "csp", "'AWS'"), columnOr(cols, "resource_id", "''"))
+	const finopsColumns = `account_id, account_name, service, usage_date, usage_period,
+				amount, daily_amount, days_in_period, metric, frequency,
+				unit, currency, csp, region, usage_type, resource_id, primary_tag, secondary_tag, recorded_at`
+
 	upsertSQL := fmt.Sprintf(`
 	COPY (
 		WITH combined AS (
-			SELECT 
-				account_id, account_name, service, usage_date, usage_period,
-				amount, daily_amount, days_in_period, metric, frequency,
-				unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+			SELECT %s
 			FROM read_parquet('%s')
 			UNION ALL
-			SELECT 
-				account_id, account_name, service, usage_date, usage_period,
-				amount, daily_amount, days_in_period, metric, frequency,
-				unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+			SELECT %s
 			FROM incoming_finops
 		),
 		ranked AS (
 			SELECT *,
 				ROW_NUMBER() OVER (
-					PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, region, usage_type, primary_tag, secondary_tag
+					PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, csp, region, usage_type, resource_id, primary_tag, secondary_tag
 					ORDER BY recorded_at DESC
 				) AS rn
 			FROM combined
 		)
-		SELECT 
-			account_id, account_name, service, usage_date, usage_period,
-			amount, daily_amount, days_in_period, metric, frequency,
-			unit, currency, region, usage_type, primary_tag, secondary_tag, recorded_at
+		SELECT %s
 		FROM ranked
 		WHERE rn = 1
 	) TO '%s' (FORMAT PARQUET);
-	`, cleanOutput, cleanPath(tempParquet))
+	`, existingSelect, cleanOutput, finopsColumns, finopsColumns, cleanPath(tempParquet))
 
 	if _, err := e.db.ExecContext(ctx, upsertSQL); err != nil {
 		return fmt.Errorf("failed executing finops parquet upsert: %w", err)
@@ -690,13 +702,19 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 	if err != nil {
 		return nil, err
 	}
-	primaryExpr := "CAST('' AS VARCHAR)"
-	secondaryExpr := "CAST('' AS VARCHAR)"
-	if _, ok := cols["primary_tag"]; ok {
-		primaryExpr = "COALESCE(primary_tag, '')"
+	// Dimensions carried from sense to enrich. Older raw files without a column read as ''.
+	dims := []string{"primary_tag", "secondary_tag", "csp", "region", "usage_type", "resource_id"}
+	dimExprs := make([]string, len(dims))
+	for i, d := range dims {
+		if _, ok := cols[d]; ok {
+			dimExprs[i] = fmt.Sprintf("COALESCE(%s, '')", d)
+		} else {
+			dimExprs[i] = "CAST('' AS VARCHAR)"
+		}
 	}
-	if _, ok := cols["secondary_tag"]; ok {
-		secondaryExpr = "COALESCE(secondary_tag, '')"
+	var dimSelect []string
+	for i, d := range dims {
+		dimSelect = append(dimSelect, fmt.Sprintf("%s AS %s", dimExprs[i], d))
 	}
 
 	query := fmt.Sprintf(`
@@ -705,19 +723,18 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 			account_id,
 			account_name,
 			service,
-			%s AS primary_tag,
-			%s AS secondary_tag,
+			%s,
 			AVG(amount) AS avg_cost,
 			MAX(amount) AS max_cost
 		FROM read_parquet('%s')
-		GROUP BY account_id, account_name, service, %s, %s
+		GROUP BY account_id, account_name, service, %s
 	)
 	SELECT 
 		'finops' AS ops_domain,
 		account_id,
 		account_name,
 		service,
-		service AS resource_or_key,
+		CASE WHEN resource_id <> '' THEN resource_id ELSE service END AS resource_or_key,
 		'CostSpike' AS metric,
 		max_cost AS actual_value,
 		avg_cost AS expected_value,
@@ -729,11 +746,11 @@ func (e *Engine) AnalyzeFinOps(ctx context.Context, inputParquet, outputParquet 
 		END AS severity,
 		'OPEN' AS status,
 		CURRENT_TIMESTAMP AS timestamp,
-		primary_tag,
-		secondary_tag
+		%s
 	FROM service_stats
 	WHERE max_cost >= (avg_cost * %f) OR max_cost > 100.0
-	`, primaryExpr, secondaryExpr, cleanPath(inputParquet), primaryExpr, secondaryExpr, thresholdMultiplier)
+	`, strings.Join(dimSelect, ",\n\t\t\t"), cleanPath(inputParquet), strings.Join(dimExprs, ", "),
+		strings.Join(dims, ",\n\t\t"), thresholdMultiplier)
 
 	exportSQL := fmt.Sprintf("COPY (%s) TO '%s' (FORMAT PARQUET);", query, cleanPath(outputParquet))
 	if _, err := e.db.ExecContext(ctx, exportSQL); err != nil {
@@ -849,6 +866,14 @@ func (e *Engine) parquetColumnSet(ctx context.Context, parquetPath string) (map[
 	return cols, rows.Err()
 }
 
+// columnOr selects name when the parquet has it, otherwise the fallback SQL expression.
+func columnOr(cols map[string]struct{}, name, fallback string) string {
+	if _, ok := cols[name]; ok {
+		return name
+	}
+	return fmt.Sprintf("CAST(%s AS VARCHAR) AS %s", fallback, name)
+}
+
 func varcharOrEmpty(cols map[string]struct{}, name string) string {
 	if _, ok := cols[name]; ok {
 		return name
@@ -861,6 +886,10 @@ type AnalyzedCostRow struct {
 	cloud.AnomalyRecord
 	PrimaryTag   string
 	SecondaryTag string
+	CSP          string
+	Region       string
+	UsageType    string
+	ResourceID   string
 }
 
 // ReadAnalyzedCostRows reads finops anomaly parquet, including hierarchy tags when present.
@@ -874,10 +903,14 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 		ops_domain, account_id, account_name, service, resource_or_key, metric,
 		CAST(actual_value AS DOUBLE), CAST(expected_value AS DOUBLE), CAST(deviation_ratio AS DOUBLE),
 		severity, status, timestamp,
-		%s, %s
+		%s, %s, %s, %s, %s, %s
 	FROM read_parquet('%s');`,
 		varcharOrEmpty(cols, "primary_tag"),
 		varcharOrEmpty(cols, "secondary_tag"),
+		varcharOrEmpty(cols, "csp"),
+		varcharOrEmpty(cols, "region"),
+		varcharOrEmpty(cols, "usage_type"),
+		varcharOrEmpty(cols, "resource_id"),
 		cleanPath(parquetPath),
 	)
 	rows, err := e.db.QueryContext(ctx, readSQL)
@@ -894,6 +927,7 @@ func (e *Engine) ReadAnalyzedCostRows(ctx context.Context, parquetPath string) (
 			&row.ActualValue, &row.ExpectedValue, &row.Deviation,
 			&row.Severity, &row.Status, &row.Timestamp,
 			&row.PrimaryTag, &row.SecondaryTag,
+			&row.CSP, &row.Region, &row.UsageType, &row.ResourceID,
 		); err != nil {
 			return nil, err
 		}
@@ -1020,6 +1054,19 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 		cost_center_id VARCHAR,
 		customer_function_id VARCHAR,
 		customer_function VARCHAR,
+		csp_id VARCHAR,
+		csp VARCHAR,
+		region_id VARCHAR,
+		region VARCHAR,
+		service_id VARCHAR,
+		service_usage_id VARCHAR,
+		service_usage VARCHAR,
+		usage_id VARCHAR,
+		usage VARCHAR,
+		resource_group_id VARCHAR,
+		resource_group VARCHAR,
+		resource_id VARCHAR,
+		resource VARCHAR,
 		timestamp TIMESTAMP
 	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
@@ -1052,6 +1099,9 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 			r.EnvironmentID, r.ServiceCategoryID, r.ServiceCategory,
 			r.BusinessUnitID, r.OwnerID, r.CostCenterID,
 			r.CustomerFunctionID, r.CustomerFunction,
+			r.CSPID, r.CSP, r.RegionID, r.Region, r.ServiceID,
+			r.ServiceUsageID, r.ServiceUsage, r.UsageID, r.Usage,
+			r.ResourceGroupID, r.ResourceGroup, r.ResourceID, r.Resource,
 			ts,
 		); err != nil {
 			return fmt.Errorf("failed appending enriched row: %w", err)
@@ -1115,7 +1165,7 @@ func (e *Engine) UpsertEnrichedParquet(ctx context.Context, records []cloud.Enri
 		ranked AS (
 			SELECT *,
 				ROW_NUMBER() OVER (
-					PARTITION BY ops_domain, account_id, service, resource_or_key, metric, project, application
+					PARTITION BY ops_domain, account_id, service, resource_or_key, metric, project, application, csp, region, usage_id
 					ORDER BY timestamp DESC
 				) AS rn
 			FROM combined
@@ -1147,7 +1197,11 @@ func enrichedColumnSelect(cols map[string]struct{}) string {
 		"potential_savings", "severity", "action_recommended",
 		"project_id", "project", "application_id", "application", "environment_id",
 		"service_category_id", "service_category", "business_unit_id", "owner_id", "cost_center_id",
-		"customer_function_id", "customer_function", "timestamp",
+		"customer_function_id", "customer_function",
+		"csp_id", "csp", "region_id", "region", "service_id",
+		"service_usage_id", "service_usage", "usage_id", "usage",
+		"resource_group_id", "resource_group", "resource_id", "resource",
+		"timestamp",
 	}
 	parts := make([]string, len(names))
 	for i, name := range names {
@@ -1196,7 +1250,11 @@ func (e *Engine) ReadEnrichedFromParquet(ctx context.Context, parquetPath string
 			&r.PotentialSavings, &r.Severity, &r.ActionRecommended,
 			&r.ProjectID, &r.Project, &r.ApplicationID, &r.Application, &r.EnvironmentID,
 			&r.ServiceCategoryID, &r.ServiceCategory, &r.BusinessUnitID, &r.OwnerID, &r.CostCenterID,
-			&r.CustomerFunctionID, &r.CustomerFunction, &r.Timestamp,
+			&r.CustomerFunctionID, &r.CustomerFunction,
+			&r.CSPID, &r.CSP, &r.RegionID, &r.Region, &r.ServiceID,
+			&r.ServiceUsageID, &r.ServiceUsage, &r.UsageID, &r.Usage,
+			&r.ResourceGroupID, &r.ResourceGroup, &r.ResourceID, &r.Resource,
+			&r.Timestamp,
 		); err != nil {
 			return nil, err
 		}

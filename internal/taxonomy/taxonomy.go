@@ -1,34 +1,17 @@
-// Package taxonomy maps empty Cost Explorer tags onto the project and business cost hierarchies.
+// Package taxonomy maps sensed cost rows onto the business and project cost hierarchies.
 //
-// Business hierarchy: BusinessUnit → Owner → CostCenter → CustomerFunc.
-// Project hierarchy: Project → App → Environment/Account → ServiceCat/Service.
+// Business hierarchy: BusinessUnit → CostCenter → Owner → CustomerFunc.
+// Project hierarchy:  Project → App → Environment/Account → CSP/Region → ServiceCat/Service
+// → ServiceUsage/Usage → ResourceGroup/Resource.
 //
-// Project references business. These levels share identity ("must behave"):
-//
-//	ProjectID/Name     = BusinessUnitID/Name
-//	AppID/Name         = OwnerID/Name
-//	EnvironmentID/Name = CostCenterID/Name
-//
-// These links are lookups ("can be mapped") and may point at a different node:
-//
-//	App     → Project
-//	Account → Environment
-//	Service → ServiceCat
+// The taxonomy is edited in Directus and stored as one flat JSON snapshot per tenant
+// (see Schema for the collections and the relations between them).
 package taxonomy
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"sort"
 	"strings"
-)
-
-const (
-	// DefaultProjectPath is the project hierarchy used when enrich is not given an explicit path.
-	DefaultProjectPath = "taxonomy/project_taxonomy.json"
-	// DefaultBusinessPath is the business hierarchy used when enrich is not given an explicit path.
-	DefaultBusinessPath = "taxonomy/business_taxonomy.json"
 )
 
 // Slot is an identifier and its display name.
@@ -37,792 +20,286 @@ type Slot struct {
 	Name string
 }
 
-// Input is the tag state sensed from Cost Explorer. Empty, "Untagged", and "Unknown" are unfilled.
+// Input is the state of one cost row. Empty, "Untagged", and "Unknown" values are unfilled.
 type Input struct {
-	AccountID        string
-	AccountName      string
-	Service          string
+	AccountID   string
+	AccountName string
+	CSP         string
+	Region      string
+	Service     string
+	UsageType   string
+	ResourceID  string
+
+	// Tag values sensed from the cloud provider. A value that is present is kept as-is.
 	Project          string
 	App              string
 	Environment      string
 	ServiceCategory  string
 	BusinessUnit     string
-	Owner            string
 	CostCenter       string
+	Owner            string
 	CustomerFunction string
 }
 
-// Output is the hierarchy after empty tags are filled.
+// Output is the resolved hierarchy for one cost row.
 type Output struct {
-	Project          Slot
-	App              Slot
-	Environment      Slot
-	ServiceCategory  Slot
 	BusinessUnit     Slot
-	Owner            Slot
 	CostCenter       Slot
+	Owner            Slot
 	CustomerFunction Slot
-	Account          Slot
-	Service          Slot
+
+	Project         Slot
+	App             Slot
+	Environment     Slot
+	Account         Slot
+	CSP             Slot
+	Region          Slot
+	ServiceCategory Slot
+	Service         Slot
+	ServiceUsage    Slot
+	Usage           Slot
+	ResourceGroup   Slot
+	Resource        Slot
 }
 
-type idName struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type businessFile struct {
-	BusinessUnits []businessUnitJSON `json:"businessUnits"`
-}
-
-type businessUnitJSON struct {
-	ID     string      `json:"id"`
-	Name   string      `json:"name"`
-	Owners []ownerJSON `json:"owners"`
-}
-
-type ownerJSON struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	CostCenters []costCenterJSON `json:"costCenters"`
-}
-
-type costCenterJSON struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	CustomerFuncs []idName `json:"customerFuncs"`
-}
-
-type projectFile struct {
-	Projects []projectJSON `json:"projects"`
-}
-
-type projectJSON struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	BusinessUnitID   string    `json:"businessUnitId"`
-	BusinessUnitName string    `json:"businessUnitName,omitempty"`
-	Apps             []appJSON `json:"apps"`
-}
-
-type appJSON struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	OwnerID      string    `json:"ownerId"`
-	OwnerName    string    `json:"ownerName,omitempty"`
-	ProjectID    string    `json:"projectId"`
-	ProjectName  string    `json:"projectName,omitempty"`
-	Environments []envJSON `json:"environments"`
-}
-
-type envJSON struct {
-	ID                string     `json:"id"`
-	Name              string     `json:"name"`
-	CostCenterID      string     `json:"costCenterId"`
-	CostCenterName    string     `json:"costCenterName,omitempty"`
-	Accounts          []acctJSON `json:"accounts"`
-	ServiceCategories []catJSON  `json:"serviceCategories"`
-}
-
-type acctJSON struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	EnvironmentID   string `json:"environmentId"`
-	EnvironmentName string `json:"environmentName,omitempty"`
-}
-
-type catJSON struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	CustomerFuncID   string        `json:"customerFuncId"`
-	CustomerFuncName string        `json:"customerFuncName,omitempty"`
-	Services         []serviceJSON `json:"services"`
-}
-
-type serviceJSON struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	ServiceCatID   string `json:"serviceCatId"`
-	ServiceCatName string `json:"serviceCatName,omitempty"`
-}
-
-type buNode struct {
+type node struct {
+	coll     string
 	id, name string
-	owners   []*ownerNode
+	scope    string
+	refs     map[string]*node
+	multi    map[string][]*node // many-to-many parents, keyed by parent collection
+	children map[string][]*node // keyed by child collection
 }
 
-type ownerNode struct {
-	id, name    string
-	bu          *buNode
-	costCenters []*ccNode
+func (n *node) ref(field string) *node {
+	if n == nil {
+		return nil
+	}
+	return n.refs[field]
 }
 
-type ccNode struct {
-	id, name string
-	owner    *ownerNode
-	funcs    []*cfNode
+func (n *node) slot() Slot {
+	if n == nil {
+		return Slot{}
+	}
+	return Slot{ID: n.id, Name: n.name}
 }
 
-type cfNode struct {
-	id, name string
-	cc       *ccNode
+// onlyChild returns the single child in coll, or nil when there are zero or several.
+func (n *node) onlyChild(coll string) *node {
+	if n == nil || len(n.children[coll]) != 1 {
+		return nil
+	}
+	return n.children[coll][0]
 }
 
-type projectNode struct {
-	id, name string
-	bu       *buNode
-	apps     []*appNode
-}
-
-type appNode struct {
-	id, name      string
-	project       *projectNode
-	mappedProject *projectNode
-	owner         *ownerNode
-	envs          []*envNode
-}
-
-type envNode struct {
-	id, name string
-	app      *appNode
-	cc       *ccNode
-	accounts []*accountNode
-	cats     []*catNode
-}
-
-type accountNode struct {
-	id, name string
-	env      *envNode
-}
-
-type catNode struct {
-	id, name string
-	env      *envNode
-	cf       *cfNode
-	services []*serviceNode
-}
-
-type serviceNode struct {
-	id, name string
-	cat      *catNode
-}
-
-// Catalog is the loaded project and business hierarchies.
+// Catalog is a validated taxonomy snapshot.
 type Catalog struct {
-	business []*buNode
-	projects []*projectNode
-
-	buByID, ownerByID, ccByID, cfByID         map[string]*indexed[any]
-	projectByID, appByID, envByID, catByID    map[string]*indexed[any]
-	accountByID, serviceByID                  map[string]*indexed[any]
-	buByName, ownerByName, ccByName, cfByName map[string]*indexed[any]
-	projectByName, appByName, envByName       map[string]*indexed[any]
-	catByName, accountByName, serviceByName   map[string]*indexed[any]
+	Tenant   string
+	byID     map[string]map[string][]*node
+	byName   map[string]map[string][]*node
+	counts   map[string]int
+	warnings []string
 }
 
-// indexed holds one node or records that the key was ambiguous.
-type indexed[T any] struct {
-	node *T
-	n    int
-}
+// Warnings lists consistency problems that do not prevent loading.
+func (c *Catalog) Warnings() []string { return c.warnings }
 
-// Load reads both taxonomy files. Project nodes must reference business nodes.
-func Load(projectPath, businessPath string) (*Catalog, error) {
-	bizRaw, err := os.ReadFile(businessPath)
+// Count returns the number of rows loaded for a collection.
+func (c *Catalog) Count(collection string) int { return c.counts[collection] }
+
+// Load reads and validates a taxonomy JSON snapshot.
+func Load(path string) (*Catalog, error) {
+	snap, err := ReadSnapshot(path)
 	if err != nil {
-		return nil, fmt.Errorf("read business taxonomy: %w", err)
+		return nil, err
 	}
-	projRaw, err := os.ReadFile(projectPath)
+	cat, err := Build(snap)
 	if err != nil {
-		return nil, fmt.Errorf("read project taxonomy: %w", err)
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-
-	var biz businessFile
-	if err := json.Unmarshal(bizRaw, &biz); err != nil {
-		return nil, fmt.Errorf("parse business taxonomy: %w", err)
-	}
-	var proj projectFile
-	if err := json.Unmarshal(projRaw, &proj); err != nil {
-		return nil, fmt.Errorf("parse project taxonomy: %w", err)
-	}
-	return build(biz, proj)
+	return cat, nil
 }
 
-// LoadOptional loads taxonomy when both files exist.
-// Empty paths use the default locations. A missing default pair skips enrichment.
-// An explicit path that is missing, or only one of the two files, is an error.
-func LoadOptional(projectPath, businessPath string) (*Catalog, error) {
-	projectExplicit := strings.TrimSpace(projectPath) != ""
-	businessExplicit := strings.TrimSpace(businessPath) != ""
-	if !projectExplicit {
-		projectPath = DefaultProjectPath
-	}
-	if !businessExplicit {
-		businessPath = DefaultBusinessPath
-	}
-
-	_, pErr := os.Stat(projectPath)
-	_, bErr := os.Stat(businessPath)
-	pOK := pErr == nil
-	bOK := bErr == nil
-	if !projectExplicit && !businessExplicit && !pOK && !bOK {
-		return nil, nil
-	}
-	if !pOK || !bOK {
-		return nil, fmt.Errorf("cost taxonomy requires both %s and %s", projectPath, businessPath)
-	}
-	return Load(projectPath, businessPath)
-}
-
-// DefaultProjectPathForTenant returns the canonical project taxonomy path for a tenant.
-func DefaultProjectPathForTenant(tenant string) string {
-	tenant = strings.TrimSpace(tenant)
-	if tenant == "" {
-		return DefaultProjectPath
-	}
-	return fmt.Sprintf("taxonomy/project_taxonomy_%s.json", tenant)
-}
-
-// DefaultBusinessPathForTenant returns the canonical business taxonomy path for a tenant.
-func DefaultBusinessPathForTenant(tenant string) string {
-	tenant = strings.TrimSpace(tenant)
-	if tenant == "" {
-		return DefaultBusinessPath
-	}
-	return fmt.Sprintf("taxonomy/business_taxonomy_%s.json", tenant)
-}
-
-// ResolveProjectTaxonomyPath resolves the project taxonomy path for a tenant.
-// If explicitPath is non-empty, it is returned directly.
-// If tenant is non-empty, candidate paths are checked:
-// 1. taxonomy/project_taxonomy_<tenant>.json
-// 2. taxonomy/<tenant>_project_taxonomy.json
-// 3. taxonomy/<tenant>_project.json
-// 4. Default fallback: taxonomy/project_taxonomy_<tenant>.json
-// If neither is provided, DefaultProjectPath is returned.
-func ResolveProjectTaxonomyPath(explicitPath, tenant string) string {
-	if strings.TrimSpace(explicitPath) != "" {
-		return explicitPath
-	}
-	tenant = strings.TrimSpace(tenant)
-	if tenant == "" {
-		return DefaultProjectPath
-	}
-	candidates := []string{
-		fmt.Sprintf("taxonomy/project_taxonomy_%s.json", tenant),
-		fmt.Sprintf("taxonomy/%s_project_taxonomy.json", tenant),
-		fmt.Sprintf("taxonomy/%s_project.json", tenant),
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return candidates[0]
-}
-
-// ResolveBusinessTaxonomyPath resolves the business taxonomy path for a tenant.
-// If explicitPath is non-empty, it is returned directly.
-// If tenant is non-empty, candidate paths are checked:
-// 1. taxonomy/business_taxonomy_<tenant>.json
-// 2. taxonomy/<tenant>_business_taxonomy.json
-// 3. taxonomy/<tenant>_business.json
-// 4. Default fallback: taxonomy/business_taxonomy_<tenant>.json
-// If neither is provided, DefaultBusinessPath is returned.
-func ResolveBusinessTaxonomyPath(explicitPath, tenant string) string {
-	if strings.TrimSpace(explicitPath) != "" {
-		return explicitPath
-	}
-	tenant = strings.TrimSpace(tenant)
-	if tenant == "" {
-		return DefaultBusinessPath
-	}
-	candidates := []string{
-		fmt.Sprintf("taxonomy/business_taxonomy_%s.json", tenant),
-		fmt.Sprintf("taxonomy/%s_business_taxonomy.json", tenant),
-		fmt.Sprintf("taxonomy/%s_business.json", tenant),
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return candidates[0]
-}
-
-// LoadOptionalForTenant loads taxonomy files resolving tenant-specific files if tenant is provided.
-func LoadOptionalForTenant(projectPath, businessPath, tenant string) (*Catalog, error) {
-	proj := ResolveProjectTaxonomyPath(projectPath, tenant)
-	biz := ResolveBusinessTaxonomyPath(businessPath, tenant)
-	return LoadOptional(proj, biz)
-}
-
-// DiscoverTenants scans the taxonomy directory and returns a sorted list of unique tenant identifiers
-// detected from filenames such as project_taxonomy_<tenant>.json, <tenant>_project_taxonomy.json, etc.
-func DiscoverTenants(taxonomyDir string) ([]string, error) {
-	if strings.TrimSpace(taxonomyDir) == "" {
-		taxonomyDir = "taxonomy"
-	}
-	entries, err := os.ReadDir(taxonomyDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read taxonomy dir %s: %w", taxonomyDir, err)
-	}
-
-	tenantsMap := make(map[string]struct{})
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".json") {
-			continue
-		}
-
-		if strings.HasPrefix(name, "project_taxonomy_") {
-			t := strings.TrimPrefix(name, "project_taxonomy_")
-			t = strings.TrimSuffix(t, ".json")
-			if t != "" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-		if strings.HasPrefix(name, "business_taxonomy_") {
-			t := strings.TrimPrefix(name, "business_taxonomy_")
-			t = strings.TrimSuffix(t, ".json")
-			if t != "" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-		if strings.HasSuffix(name, "_project_taxonomy.json") {
-			t := strings.TrimSuffix(name, "_project_taxonomy.json")
-			if t != "" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-		if strings.HasSuffix(name, "_business_taxonomy.json") {
-			t := strings.TrimSuffix(name, "_business_taxonomy.json")
-			if t != "" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-		if strings.HasSuffix(name, "_project.json") {
-			t := strings.TrimSuffix(name, "_project.json")
-			if t != "" && t != "sample" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-		if strings.HasSuffix(name, "_business.json") {
-			t := strings.TrimSuffix(name, "_business.json")
-			if t != "" && t != "sample" {
-				tenantsMap[t] = struct{}{}
-			}
-		}
-	}
-
-	var tenants []string
-	for t := range tenantsMap {
-		tenants = append(tenants, t)
-	}
-	sort.Strings(tenants)
-	return tenants, nil
-}
-
-func build(biz businessFile, proj projectFile) (*Catalog, error) {
+// Build validates a snapshot and indexes it. All validation errors are reported together.
+func Build(snap *Snapshot) (*Catalog, error) {
 	c := &Catalog{
-		buByID: map[string]*indexed[any]{}, ownerByID: map[string]*indexed[any]{},
-		ccByID: map[string]*indexed[any]{}, cfByID: map[string]*indexed[any]{},
-		projectByID: map[string]*indexed[any]{}, appByID: map[string]*indexed[any]{},
-		envByID: map[string]*indexed[any]{}, catByID: map[string]*indexed[any]{},
-		accountByID: map[string]*indexed[any]{}, serviceByID: map[string]*indexed[any]{},
-		buByName: map[string]*indexed[any]{}, ownerByName: map[string]*indexed[any]{},
-		ccByName: map[string]*indexed[any]{}, cfByName: map[string]*indexed[any]{},
-		projectByName: map[string]*indexed[any]{}, appByName: map[string]*indexed[any]{},
-		envByName: map[string]*indexed[any]{}, catByName: map[string]*indexed[any]{},
-		accountByName: map[string]*indexed[any]{}, serviceByName: map[string]*indexed[any]{},
+		Tenant: snap.Tenant,
+		byID:   map[string]map[string][]*node{},
+		byName: map[string]map[string][]*node{},
+		counts: map[string]int{},
 	}
-
-	for _, bu := range biz.BusinessUnits {
-		node, err := c.addBusinessUnit(bu)
-		if err != nil {
-			return nil, err
-		}
-		c.business = append(c.business, node)
-	}
-
-	var pendingApps []pendingApp
-	for _, p := range proj.Projects {
-		node, apps, err := c.addProject(p)
-		if err != nil {
-			return nil, err
-		}
-		c.projects = append(c.projects, node)
-		pendingApps = append(pendingApps, apps...)
-	}
-	for _, pend := range pendingApps {
-		if pend.mapID == "" {
-			pend.app.mappedProject = pend.app.project
+	var errs []error
+	for _, spec := range Schema {
+		c.byID[spec.Name] = map[string][]*node{}
+		c.byName[spec.Name] = map[string][]*node{}
+		if spec.Junction {
+			errs = append(errs, c.link(spec, snap.Rows(spec.Name))...)
 			continue
 		}
-		target := one(c.projectByID, pend.mapID)
-		if target == nil {
-			target = one(c.projectByName, pend.mapID)
+		for i, row := range snap.Rows(spec.Name) {
+			where := fmt.Sprintf("%s[%d]", spec.Name, i)
+			if row.ID() == "" || row.Name() == "" {
+				errs = append(errs, fmt.Errorf("%s: id and name are required (id=%q name=%q)", where, row.ID(), row.Name()))
+				continue
+			}
+			where = fmt.Sprintf("%s %q", spec.Label, row.ID())
+			n := &node{coll: spec.Name, id: row.ID(), name: row.Name(), refs: map[string]*node{}, multi: map[string][]*node{}, children: map[string][]*node{}}
+
+			for _, ref := range spec.Refs {
+				raw := strings.TrimSpace(row[ref.Field])
+				if raw == "" {
+					if ref.Required() {
+						errs = append(errs, fmt.Errorf("%s: %s is required", where, ref.Field))
+					}
+					continue
+				}
+				target := c.lookup(ref.Target, raw)
+				if target == nil {
+					errs = append(errs, fmt.Errorf("%s: %s %q does not match a %s id or unique name", where, ref.Field, raw, specLabel(ref.Target)))
+					continue
+				}
+				n.refs[ref.Field] = target
+				target.children[spec.Name] = append(target.children[spec.Name], n)
+			}
+			if spec.ScopeRef != "" {
+				if s := n.refs[spec.ScopeRef]; s != nil {
+					n.scope = key(s.id)
+				}
+			}
+
+			for _, other := range c.byID[spec.Name][key(n.id)] {
+				if other.scope == n.scope {
+					scope := ""
+					if spec.ScopeRef != "" {
+						scope = fmt.Sprintf(" within %s %q", spec.ScopeRef, n.scope)
+					}
+					errs = append(errs, fmt.Errorf("%s: duplicate id%s", where, scope))
+				}
+			}
+			c.byID[spec.Name][key(n.id)] = append(c.byID[spec.Name][key(n.id)], n)
+			c.byName[spec.Name][key(n.name)] = append(c.byName[spec.Name][key(n.name)], n)
+			c.counts[spec.Name]++
 		}
-		if target == nil {
-			return nil, fmt.Errorf("app %q projectId/projectName %q does not match a project", pend.app.id, pend.mapID)
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	for _, envs := range c.byID[Environments] {
+		for _, env := range envs {
+			if len(env.multi[Apps]) == 0 {
+				c.warnings = append(c.warnings, fmt.Sprintf("Environment %q is not linked to any App (%s)", env.id, AppEnvironments))
+			}
 		}
-		pend.app.mappedProject = target.(*projectNode)
+	}
+
+	// An App's cost center should roll up to the same business unit as its project.
+	for _, apps := range c.byID[Apps] {
+		for _, app := range apps {
+			projBU := app.ref("project").ref("business_unit")
+			ccBU := app.ref("cost_center").ref("business_unit")
+			if projBU != nil && ccBU != nil && projBU != ccBU {
+				c.warnings = append(c.warnings, fmt.Sprintf(
+					"App %q: project %q is in business unit %q but cost center %q is in business unit %q",
+					app.id, app.ref("project").id, projBU.id, app.ref("cost_center").id, ccBU.id))
+			}
+		}
 	}
 	return c, nil
 }
 
-func (c *Catalog) addBusinessUnit(in businessUnitJSON) (*buNode, error) {
-	if err := requireIDName("businessUnit", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	node := &buNode{id: in.ID, name: in.Name}
-	if err := c.index("businessUnit", node, c.buByID, c.buByName); err != nil {
-		return nil, err
-	}
-	for _, ow := range in.Owners {
-		owner, err := c.addOwner(ow, node)
-		if err != nil {
-			return nil, err
+// link reads a junction collection: each row joins a child (Refs[0]) to a parent (Refs[1]).
+func (c *Catalog) link(spec CollectionSpec, rows []Row) []error {
+	var errs []error
+	childRef, parentRef := spec.Refs[0], spec.Refs[1]
+	seen := map[[2]*node]bool{}
+	for i, row := range rows {
+		where := fmt.Sprintf("%s[%d]", spec.Name, i)
+		ends := make([]*node, 2)
+		ok := true
+		for k, ref := range []RefSpec{childRef, parentRef} {
+			raw := strings.TrimSpace(row[ref.Field])
+			if raw == "" {
+				errs = append(errs, fmt.Errorf("%s: %s is required", where, ref.Field))
+				ok = false
+				continue
+			}
+			if ends[k] = c.lookup(ref.Target, raw); ends[k] == nil {
+				errs = append(errs, fmt.Errorf("%s: %s %q does not match a %s id or unique name", where, ref.Field, raw, specLabel(ref.Target)))
+				ok = false
+			}
 		}
-		node.owners = append(node.owners, owner)
+		if !ok {
+			continue
+		}
+		child, parent := ends[0], ends[1]
+		if seen[[2]*node{child, parent}] {
+			errs = append(errs, fmt.Errorf("%s: duplicate link %s %q ↔ %s %q", where, childRef.Field, child.id, parentRef.Field, parent.id))
+			continue
+		}
+		seen[[2]*node{child, parent}] = true
+		child.multi[parent.coll] = append(child.multi[parent.coll], parent)
+		parent.children[child.coll] = append(parent.children[child.coll], child)
+		c.counts[spec.Name]++
 	}
-	return node, nil
+	return errs
 }
 
-func (c *Catalog) addOwner(in ownerJSON, bu *buNode) (*ownerNode, error) {
-	if err := requireIDName("owner", in.ID, in.Name); err != nil {
-		return nil, err
+func specLabel(coll string) string {
+	if s, ok := Spec(coll); ok {
+		return s.Label
 	}
-	node := &ownerNode{id: in.ID, name: in.Name, bu: bu}
-	if err := c.index("owner", node, c.ownerByID, c.ownerByName); err != nil {
-		return nil, err
-	}
-	for _, cc := range in.CostCenters {
-		center, err := c.addCostCenter(cc, node)
-		if err != nil {
-			return nil, err
-		}
-		node.costCenters = append(node.costCenters, center)
-	}
-	return node, nil
+	return coll
 }
 
-func (c *Catalog) addCostCenter(in costCenterJSON, owner *ownerNode) (*ccNode, error) {
-	if err := requireIDName("costCenter", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	node := &ccNode{id: in.ID, name: in.Name, owner: owner}
-	if err := c.index("costCenter", node, c.ccByID, c.ccByName); err != nil {
-		return nil, err
-	}
-	for _, fn := range in.CustomerFuncs {
-		cf, err := c.addCustomerFunc(fn, node)
-		if err != nil {
-			return nil, err
-		}
-		node.funcs = append(node.funcs, cf)
-	}
-	return node, nil
-}
-
-func (c *Catalog) addCustomerFunc(in idName, cc *ccNode) (*cfNode, error) {
-	if err := requireIDName("customerFunc", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	node := &cfNode{id: in.ID, name: in.Name, cc: cc}
-	if err := c.index("customerFunc", node, c.cfByID, c.cfByName); err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-type pendingApp struct {
-	app   *appNode
-	mapID string
-}
-
-func (c *Catalog) addProject(in projectJSON) (*projectNode, []pendingApp, error) {
-	if err := requireIDName("project", in.ID, in.Name); err != nil {
-		return nil, nil, err
-	}
-	buID := strings.TrimSpace(in.BusinessUnitID)
-	if buID == "" {
-		buID = strings.TrimSpace(in.BusinessUnitName)
-	}
-	if buID == "" {
-		buID = in.ID
-	}
-	bu := one(c.buByID, buID)
-	if bu == nil {
-		bu = one(c.buByName, buID)
-	}
-	if bu == nil {
-		return nil, nil, fmt.Errorf("project %q references unknown businessUnit %q", in.ID, buID)
-	}
-	buNode := bu.(*buNode)
-	if buNode.id != in.ID && buID != in.ID && buID != in.Name {
-		return nil, nil, fmt.Errorf("project id %q must behave as businessUnit id %q", in.ID, buNode.id)
-	}
-	if !strings.EqualFold(buNode.name, in.Name) {
-		return nil, nil, fmt.Errorf("project name %q must behave as businessUnit name %q", in.Name, buNode.name)
-	}
-	node := &projectNode{id: in.ID, name: in.Name, bu: buNode}
-	if err := c.index("project", node, c.projectByID, c.projectByName); err != nil {
-		return nil, nil, err
-	}
-	var pending []pendingApp
-	for _, app := range in.Apps {
-		child, mapID, err := c.addApp(app, node)
-		if err != nil {
-			return nil, nil, err
-		}
-		node.apps = append(node.apps, child)
-		pending = append(pending, pendingApp{app: child, mapID: mapID})
-	}
-	return node, pending, nil
-}
-
-func (c *Catalog) addApp(in appJSON, project *projectNode) (*appNode, string, error) {
-	if err := requireIDName("app", in.ID, in.Name); err != nil {
-		return nil, "", err
-	}
-	ownerID := strings.TrimSpace(in.OwnerID)
-	if ownerID == "" {
-		ownerID = strings.TrimSpace(in.OwnerName)
-	}
-	if ownerID == "" {
-		ownerID = in.ID
-	}
-	owner := one(c.ownerByID, ownerID)
-	if owner == nil {
-		owner = one(c.ownerByName, ownerID)
-	}
-	if owner == nil {
-		return nil, "", fmt.Errorf("app %q references unknown owner %q", in.ID, ownerID)
-	}
-	ownerNode := owner.(*ownerNode)
-	if ownerNode.id != in.ID && ownerID != in.ID && ownerID != in.Name {
-		return nil, "", fmt.Errorf("app id %q must behave as owner id %q", in.ID, ownerNode.id)
-	}
-	if !strings.EqualFold(ownerNode.name, in.Name) {
-		return nil, "", fmt.Errorf("app name %q must behave as owner name %q", in.Name, ownerNode.name)
-	}
-	node := &appNode{id: in.ID, name: in.Name, project: project, owner: ownerNode}
-	if err := c.index("app", node, c.appByID, c.appByName); err != nil {
-		return nil, "", err
-	}
-	for _, env := range in.Environments {
-		child, err := c.addEnvironment(env, node)
-		if err != nil {
-			return nil, "", err
-		}
-		node.envs = append(node.envs, child)
-	}
-	mapID := strings.TrimSpace(in.ProjectID)
-	if mapID == "" {
-		mapID = strings.TrimSpace(in.ProjectName)
-	}
-	return node, mapID, nil
-}
-
-func (c *Catalog) addEnvironment(in envJSON, app *appNode) (*envNode, error) {
-	if err := requireIDName("environment", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	ccID := strings.TrimSpace(in.CostCenterID)
-	if ccID == "" {
-		ccID = strings.TrimSpace(in.CostCenterName)
-	}
-	if ccID == "" {
-		ccID = in.ID
-	}
-	cc := one(c.ccByID, ccID)
-	if cc == nil {
-		cc = one(c.ccByName, ccID)
-	}
-	if cc == nil {
-		return nil, fmt.Errorf("environment %q references unknown costCenter %q", in.ID, ccID)
-	}
-	ccNode := cc.(*ccNode)
-	if ccNode.id != in.ID && ccID != in.ID && ccID != in.Name {
-		return nil, fmt.Errorf("environment id %q must behave as costCenter id %q", in.ID, ccNode.id)
-	}
-	if !strings.EqualFold(ccNode.name, in.Name) {
-		return nil, fmt.Errorf("environment name %q must behave as costCenter name %q", in.Name, ccNode.name)
-	}
-	node := &envNode{id: in.ID, name: in.Name, app: app, cc: ccNode}
-	if err := c.index("environment", node, c.envByID, c.envByName); err != nil {
-		return nil, err
-	}
-	for _, acct := range in.Accounts {
-		child, err := c.addAccount(acct, node)
-		if err != nil {
-			return nil, err
-		}
-		node.accounts = append(node.accounts, child)
-	}
-	for _, cat := range in.ServiceCategories {
-		child, err := c.addServiceCat(cat, node)
-		if err != nil {
-			return nil, err
-		}
-		node.cats = append(node.cats, child)
-	}
-	return node, nil
-}
-
-func (c *Catalog) addAccount(in acctJSON, parent *envNode) (*accountNode, error) {
-	if err := requireIDName("account", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	env := parent
-	mapID := strings.TrimSpace(in.EnvironmentID)
-	if mapID == "" {
-		mapID = strings.TrimSpace(in.EnvironmentName)
-	}
-	if mapID != "" {
-		found := one(c.envByID, mapID)
-		if found == nil {
-			found = one(c.envByName, mapID)
-		}
-		if found == nil {
-			return nil, fmt.Errorf("account %q environmentId/environmentName %q does not match an environment", in.ID, mapID)
-		}
-		env = found.(*envNode)
-	}
-	node := &accountNode{id: in.ID, name: in.Name, env: env}
-	if err := c.index("account", node, c.accountByID, c.accountByName); err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-func (c *Catalog) addServiceCat(in catJSON, env *envNode) (*catNode, error) {
-	if err := requireIDName("serviceCategory", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	node := &catNode{id: in.ID, name: in.Name, env: env}
-	mapID := strings.TrimSpace(in.CustomerFuncID)
-	if mapID == "" {
-		mapID = strings.TrimSpace(in.CustomerFuncName)
-	}
-	if mapID != "" {
-		found := one(c.cfByID, mapID)
-		if found == nil {
-			found = one(c.cfByName, mapID)
-		}
-		if found == nil {
-			return nil, fmt.Errorf("serviceCategory %q customerFuncId/customerFuncName %q does not match a customerFunc", in.ID, mapID)
-		}
-		node.cf = found.(*cfNode)
-	}
-	if err := c.index("serviceCategory", node, c.catByID, c.catByName); err != nil {
-		return nil, err
-	}
-	for _, svc := range in.Services {
-		child, err := c.addService(svc, node)
-		if err != nil {
-			return nil, err
-		}
-		node.services = append(node.services, child)
-	}
-	return node, nil
-}
-
-func (c *Catalog) addService(in serviceJSON, parent *catNode) (*serviceNode, error) {
-	if err := requireIDName("service", in.ID, in.Name); err != nil {
-		return nil, err
-	}
-	cat := parent
-	mapID := strings.TrimSpace(in.ServiceCatID)
-	if mapID == "" {
-		mapID = strings.TrimSpace(in.ServiceCatName)
-	}
-	if mapID != "" {
-		found := one(c.catByID, mapID)
-		if found == nil {
-			found = one(c.catByName, mapID)
-		}
-		if found == nil {
-			return nil, fmt.Errorf("service %q serviceCatId/serviceCatName %q does not match a serviceCategory", in.ID, mapID)
-		}
-		cat = found.(*catNode)
-	}
-	node := &serviceNode{id: in.ID, name: in.Name, cat: cat}
-	if err := c.index("service", node, c.serviceByID, c.serviceByName); err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-func (c *Catalog) index(level string, node any, byID, byName map[string]*indexed[any]) error {
-	id, name := nodeIDName(node)
-	if err := putUnique(byID, key(id), node, level+" id"); err != nil {
-		return err
-	}
-	if err := putUnique(byName, key(name), node, level+" name"); err != nil {
-		return err
-	}
-	return nil
-}
-
-func nodeIDName(node any) (string, string) {
-	switch n := node.(type) {
-	case *buNode:
-		return n.id, n.name
-	case *ownerNode:
-		return n.id, n.name
-	case *ccNode:
-		return n.id, n.name
-	case *cfNode:
-		return n.id, n.name
-	case *projectNode:
-		return n.id, n.name
-	case *appNode:
-		return n.id, n.name
-	case *envNode:
-		return n.id, n.name
-	case *catNode:
-		return n.id, n.name
-	case *accountNode:
-		return n.id, n.name
-	case *serviceNode:
-		return n.id, n.name
-	default:
-		return "", ""
-	}
-}
-
-func putUnique(m map[string]*indexed[any], k string, node any, what string) error {
-	if k == "" {
-		return fmt.Errorf("empty %s", what)
-	}
-	if prev, ok := m[k]; ok && prev.n > 0 {
-		prev.n++
-		prev.node = nil
-		return fmt.Errorf("duplicate %s %q", what, k)
-	}
-	m[k] = &indexed[any]{node: &node, n: 1}
-	return nil
-}
-
-func one(m map[string]*indexed[any], raw string) any {
-	slot, ok := m[key(raw)]
-	if !ok || slot.n != 1 || slot.node == nil {
+// lookup finds a node by id, then by name. Ambiguous matches return nil.
+func (c *Catalog) lookup(coll, raw string) *node {
+	if isEmpty(raw) {
 		return nil
 	}
-	return *slot.node
+	if ns := c.byID[coll][key(raw)]; len(ns) == 1 {
+		return ns[0]
+	}
+	if ns := c.byName[coll][key(raw)]; len(ns) == 1 {
+		return ns[0]
+	}
+	return nil
 }
 
-func requireIDName(level, id, name string) error {
-	if strings.TrimSpace(id) == "" || strings.TrimSpace(name) == "" {
-		return fmt.Errorf("%s requires id and name", level)
+// lookupRegion finds a region by id or name, scoped to a CSP when one is known.
+func (c *Catalog) lookupRegion(csp *node, raw string) *node {
+	if isEmpty(raw) {
+		return nil
+	}
+	if csp == nil {
+		return c.lookup(Regions, raw)
+	}
+	for _, idx := range []map[string][]*node{c.byID[Regions], c.byName[Regions]} {
+		var hit *node
+		n := 0
+		for _, r := range idx[key(raw)] {
+			if r.scope == key(csp.id) {
+				hit = r
+				n++
+			}
+		}
+		if n == 1 {
+			return hit
+		}
+	}
+	return nil
+}
+
+// lookupUsage matches a usage type exactly, then without an AWS region prefix
+// (e.g. "APS1-BoxUsage:t3.medium" → "BoxUsage:t3.medium").
+func (c *Catalog) lookupUsage(raw string) *node {
+	if n := c.lookup(Usages, raw); n != nil {
+		return n
+	}
+	raw = strings.TrimSpace(raw)
+	if i := strings.Index(raw, "-"); i > 0 && i <= 5 && raw[:i] == strings.ToUpper(raw[:i]) {
+		return c.lookup(Usages, raw[i+1:])
 	}
 	return nil
 }
@@ -840,374 +317,279 @@ func isEmpty(s string) bool {
 	}
 }
 
-// Resolve fills empty tags from the hierarchies. Values already present are kept.
-func (c *Catalog) Resolve(in Input) Output {
-	var project *projectNode
-	var app *appNode
-	var env *envNode
-	var cat *catNode
-	var bu *buNode
-	var owner *ownerNode
-	var cc *ccNode
-	var cf *cfNode
-	var account *accountNode
-	var service *serviceNode
-
-	if !isEmpty(in.AccountID) {
-		if n := one(c.accountByID, in.AccountID); n != nil {
-			account = n.(*accountNode)
-		}
-	}
-	if account == nil && !isEmpty(in.AccountName) {
-		if n := one(c.accountByName, in.AccountName); n != nil {
-			account = n.(*accountNode)
-		}
-	}
-	if !isEmpty(in.Service) {
-		if n := one(c.serviceByID, in.Service); n != nil {
-			service = n.(*serviceNode)
-		} else if n := one(c.serviceByName, in.Service); n != nil {
-			service = n.(*serviceNode)
-		}
-	}
-
-	project = c.matchProject(in.Project)
-	app = c.matchApp(in.App)
-	env = c.matchEnv(in.Environment)
-	cat = c.matchCat(in.ServiceCategory)
-	bu = c.matchBU(in.BusinessUnit)
-	owner = c.matchOwner(in.Owner)
-	cc = c.matchCC(in.CostCenter)
-	cf = c.matchCF(in.CustomerFunction)
-
-	// Also classify a raw project/app token when it uniquely names another level.
-	if project == nil && !isEmpty(in.Project) {
-		c.classify(in.Project, &app, &env, &cat, &bu, &owner, &cc, &cf)
-	}
-	if app == nil && !isEmpty(in.App) {
-		c.classify(in.App, &app, &env, &cat, &bu, &owner, &cc, &cf)
-	}
-
-	if env == nil && account != nil && isEmpty(in.Environment) {
-		env = account.env
-	}
-	if cat == nil && service != nil && isEmpty(in.ServiceCategory) {
-		if env == nil || service.cat == nil || service.cat.env == env {
-			cat = service.cat
-		}
-	}
-	// A service category supplies its environment only when this row has no account,
-	// or the account already maps to that same environment.
-	if env == nil && cat != nil && isEmpty(in.Environment) && account == nil && isEmpty(in.AccountID) && isEmpty(in.AccountName) {
-		env = cat.env
-	}
-	if app == nil && env != nil && isEmpty(in.App) {
-		app = env.app
-	}
-	if project == nil && app != nil && isEmpty(in.Project) {
-		project = app.mappedProject
-		if project == nil {
-			project = app.project
-		}
-	}
-	if bu == nil && project != nil && isEmpty(in.BusinessUnit) {
-		bu = project.bu
-	}
-	if owner == nil && app != nil && isEmpty(in.Owner) {
-		owner = app.owner
-	}
-	if cc == nil && env != nil && isEmpty(in.CostCenter) {
-		cc = env.cc
-	}
-	if cf == nil && isEmpty(in.CustomerFunction) {
-		categoryOwnsRow := cat != nil && (env != nil && cat.env == env || (account == nil && isEmpty(in.AccountID) && isEmpty(in.AccountName)))
-		if categoryOwnsRow && cat.cf != nil {
-			cf = cat.cf
-		} else if cc != nil && len(cc.funcs) == 1 {
-			cf = cc.funcs[0]
-		}
-	}
-
-	if project == nil && bu != nil && isEmpty(in.Project) {
-		if n := one(c.projectByID, bu.id); n != nil {
-			project = n.(*projectNode)
-		}
-	}
-	if app == nil && owner != nil && isEmpty(in.App) {
-		if n := one(c.appByID, owner.id); n != nil {
-			app = n.(*appNode)
-		}
-	}
-	if env == nil && cc != nil && isEmpty(in.Environment) {
-		if n := one(c.envByID, cc.id); n != nil {
-			env = n.(*envNode)
-		}
-	}
-	if app == nil && env != nil && isEmpty(in.App) {
-		app = env.app
-	}
-	if project == nil && app != nil && isEmpty(in.Project) {
-		project = app.mappedProject
-		if project == nil {
-			project = app.project
-		}
-	}
-	if bu == nil && project != nil && isEmpty(in.BusinessUnit) {
-		bu = project.bu
-	}
-	if owner == nil && app != nil && isEmpty(in.Owner) {
-		owner = app.owner
-	}
-	if cc == nil && env != nil && isEmpty(in.CostCenter) {
-		cc = env.cc
-	}
-
-	out := Output{}
-	if account != nil {
-		out.Account = Slot{ID: account.id, Name: account.name}
-	} else {
-		out.Account = Slot{ID: clean(in.AccountID), Name: clean(in.AccountName)}
-	}
-	if service != nil {
-		out.Service = Slot{ID: service.id, Name: service.name}
-	} else if !isEmpty(in.Service) {
-		out.Service = Slot{Name: strings.TrimSpace(in.Service)}
-	}
-
-	out.Project = slotOf(project, in.Project)
-	out.App = slotOf(app, in.App)
-	out.Environment = slotOf(env, in.Environment)
-	out.ServiceCategory = slotOf(cat, in.ServiceCategory)
-	out.BusinessUnit = slotOf(bu, in.BusinessUnit)
-	out.Owner = slotOf(owner, in.Owner)
-	out.CostCenter = slotOf(cc, in.CostCenter)
-	out.CustomerFunction = slotOf(cf, in.CustomerFunction)
-
-	// Identity behave: copy whichever side was resolved into the empty side.
-	out.Project, out.BusinessUnit = behave(out.Project, out.BusinessUnit)
-	out.App, out.Owner = behave(out.App, out.Owner)
-	out.Environment, out.CostCenter = behave(out.Environment, out.CostCenter)
-	return out
-}
-
-func (c *Catalog) classify(token string, app **appNode, env **envNode, cat **catNode, bu **buNode, owner **ownerNode, cc **ccNode, cf **cfNode) {
-	if *app == nil {
-		*app = c.matchApp(token)
-	}
-	if *env == nil {
-		*env = c.matchEnv(token)
-	}
-	if *cat == nil {
-		*cat = c.matchCat(token)
-	}
-	if *bu == nil {
-		*bu = c.matchBU(token)
-	}
-	if *owner == nil {
-		*owner = c.matchOwner(token)
-	}
-	if *cc == nil {
-		*cc = c.matchCC(token)
-	}
-	if *cf == nil {
-		*cf = c.matchCF(token)
-	}
-}
-
-func (c *Catalog) matchProject(raw string) *projectNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.projectByID, raw); n != nil {
-		return n.(*projectNode)
-	}
-	if n := one(c.projectByName, raw); n != nil {
-		return n.(*projectNode)
-	}
-	if n := one(c.buByID, raw); n != nil {
-		if p := one(c.projectByID, n.(*buNode).id); p != nil {
-			return p.(*projectNode)
-		}
-	}
-	if n := one(c.buByName, raw); n != nil {
-		if p := one(c.projectByID, n.(*buNode).id); p != nil {
-			return p.(*projectNode)
-		}
-	}
-	return nil
-}
-
-func (c *Catalog) matchApp(raw string) *appNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.appByID, raw); n != nil {
-		return n.(*appNode)
-	}
-	if n := one(c.appByName, raw); n != nil {
-		return n.(*appNode)
-	}
-	if n := one(c.ownerByID, raw); n != nil {
-		if a := one(c.appByID, n.(*ownerNode).id); a != nil {
-			return a.(*appNode)
-		}
-	}
-	if n := one(c.ownerByName, raw); n != nil {
-		if a := one(c.appByID, n.(*ownerNode).id); a != nil {
-			return a.(*appNode)
-		}
-	}
-	return nil
-}
-
-func (c *Catalog) matchEnv(raw string) *envNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.envByID, raw); n != nil {
-		return n.(*envNode)
-	}
-	if n := one(c.envByName, raw); n != nil {
-		return n.(*envNode)
-	}
-	if n := one(c.ccByID, raw); n != nil {
-		if e := one(c.envByID, n.(*ccNode).id); e != nil {
-			return e.(*envNode)
-		}
-	}
-	if n := one(c.ccByName, raw); n != nil {
-		if e := one(c.envByID, n.(*ccNode).id); e != nil {
-			return e.(*envNode)
-		}
-	}
-	return nil
-}
-
-func (c *Catalog) matchCat(raw string) *catNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.catByID, raw); n != nil {
-		return n.(*catNode)
-	}
-	if n := one(c.catByName, raw); n != nil {
-		return n.(*catNode)
-	}
-	return nil
-}
-
-func (c *Catalog) matchBU(raw string) *buNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.buByID, raw); n != nil {
-		return n.(*buNode)
-	}
-	if n := one(c.buByName, raw); n != nil {
-		return n.(*buNode)
-	}
-	return nil
-}
-
-func (c *Catalog) matchOwner(raw string) *ownerNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.ownerByID, raw); n != nil {
-		return n.(*ownerNode)
-	}
-	if n := one(c.ownerByName, raw); n != nil {
-		return n.(*ownerNode)
-	}
-	return nil
-}
-
-func (c *Catalog) matchCC(raw string) *ccNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.ccByID, raw); n != nil {
-		return n.(*ccNode)
-	}
-	if n := one(c.ccByName, raw); n != nil {
-		return n.(*ccNode)
-	}
-	return nil
-}
-
-func (c *Catalog) matchCF(raw string) *cfNode {
-	if isEmpty(raw) {
-		return nil
-	}
-	if n := one(c.cfByID, raw); n != nil {
-		return n.(*cfNode)
-	}
-	if n := one(c.cfByName, raw); n != nil {
-		return n.(*cfNode)
-	}
-	return nil
-}
-
-func slotOf(node any, raw string) Slot {
-	switch n := node.(type) {
-	case *projectNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *appNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *envNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *catNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *buNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *ownerNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *ccNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	case *cfNode:
-		if n != nil {
-			return Slot{ID: n.id, Name: n.name}
-		}
-	}
-	if isEmpty(raw) {
-		return Slot{}
-	}
-	return Slot{Name: strings.TrimSpace(raw)}
-}
-
-func behave(left, right Slot) (Slot, Slot) {
-	if left.ID == "" {
-		left.ID = right.ID
-	}
-	if right.ID == "" {
-		right.ID = left.ID
-	}
-	if left.Name == "" {
-		left.Name = right.Name
-	}
-	if right.Name == "" {
-		right.Name = left.Name
-	}
-	return left, right
-}
-
 func clean(s string) string {
 	if isEmpty(s) {
 		return ""
 	}
 	return strings.TrimSpace(s)
+}
+
+// Resolve maps one cost row onto the hierarchies. Matching runs in two directions until
+// nothing changes:
+//
+//   - Evidence: tag values that match the taxonomy, plus the row's own account, CSP, region,
+//     service, usage type and resource id.
+//   - Bottom-up: every resolved node fills its parents, most specific first (Resource →
+//     ResourceGroup → CustomerFunc → Owner → CostCenter → BusinessUnit; Resource → Environment;
+//     Account → Environment → App → Project → BusinessUnit). An Environment fills its App only
+//     when it is linked to exactly one.
+//   - Narrowing: an empty organizational level is filled when every resolved neighbor's
+//     candidates intersect to exactly one node — a parent's children (top-down, BusinessUnit →
+//     Project → App → Environment → Account) and a child's many-to-many parents (an Environment
+//     shared by several Apps). When several candidates remain but all share a parent (both
+//     Apps of a shared Environment are in one Project), that parent is filled. Catalog levels
+//     and levels the row already carries a value for are never filled this way.
+//
+// A slot is never overwritten once filled, so tags that match the taxonomy win over derived
+// values. A tag that matches nothing does not block derivation; it is kept only when the slot
+// stays empty. A tag that is ambiguous by name (e.g. "Production") is matched again among the
+// children of an already-resolved parent.
+func (c *Catalog) Resolve(in Input) Output {
+	r := &resolver{c: c, slots: map[string]*node{}, pending: map[string]string{}}
+
+	tags := []struct{ coll, raw string }{
+		{Projects, in.Project}, {Apps, in.App}, {Environments, in.Environment},
+		{ServiceCats, in.ServiceCategory}, {BusinessUnits, in.BusinessUnit},
+		{CostCenters, in.CostCenter}, {Owners, in.Owner}, {CustomerFuncs, in.CustomerFunction},
+	}
+	for _, t := range tags {
+		if n := c.lookup(t.coll, t.raw); n != nil {
+			r.set(n)
+		} else if !isEmpty(t.raw) {
+			r.pending[t.coll] = clean(t.raw)
+		}
+	}
+	// The primary/secondary tag can name a different level than the slot it was sensed in.
+	if _, ok := r.pending[Projects]; ok {
+		r.set(c.lookup(BusinessUnits, in.Project))
+	}
+	if _, ok := r.pending[Apps]; ok {
+		r.set(c.lookup(Environments, in.App))
+		r.set(c.lookup(CostCenters, in.App))
+	}
+
+	account := c.lookup(Accounts, in.AccountID)
+	if account == nil {
+		account = c.lookup(Accounts, in.AccountName)
+	}
+	csp := c.lookup(CSPs, in.CSP)
+	r.set(account)
+	r.set(csp)
+	r.set(c.lookupRegion(csp, in.Region))
+	r.set(c.lookup(Services, in.Service))
+	r.set(c.lookupUsage(in.UsageType))
+	r.set(c.lookup(Resources, in.ResourceID))
+
+	// Levels the row carries its own value for are never filled top-down.
+	given := map[string]bool{
+		Accounts:  !isEmpty(in.AccountID) || !isEmpty(in.AccountName),
+		CSPs:      !isEmpty(in.CSP),
+		Regions:   !isEmpty(in.Region),
+		Services:  !isEmpty(in.Service),
+		Usages:    !isEmpty(in.UsageType),
+		Resources: !isEmpty(in.ResourceID),
+	}
+	for {
+		changed := r.up()
+		if r.matchPendingInScope() {
+			changed = true
+		}
+		if !changed && !r.narrow(given) {
+			break
+		}
+	}
+
+	out := Output{
+		BusinessUnit:     r.slot(BusinessUnits),
+		CostCenter:       r.slot(CostCenters),
+		Owner:            r.slot(Owners),
+		CustomerFunction: r.slot(CustomerFuncs),
+		Project:          r.slot(Projects),
+		App:              r.slot(Apps),
+		Environment:      r.slot(Environments),
+		ServiceCategory:  r.slot(ServiceCats),
+		ServiceUsage:     r.slot(ServiceUsages),
+		ResourceGroup:    r.slot(ResourceGroups),
+		CSP:              slotOf(r.slots[CSPs], in.CSP),
+		Region:           slotOf(r.slots[Regions], in.Region),
+		Service:          slotOf(r.slots[Services], in.Service),
+	}
+	if n := r.slots[Accounts]; n != nil {
+		out.Account = n.slot()
+	} else {
+		out.Account = Slot{ID: clean(in.AccountID), Name: clean(in.AccountName)}
+	}
+	if n := r.slots[Usages]; n != nil {
+		out.Usage = n.slot()
+	} else {
+		out.Usage = Slot{ID: clean(in.UsageType)}
+	}
+	if n := r.slots[Resources]; n != nil {
+		out.Resource = n.slot()
+	} else {
+		out.Resource = Slot{ID: clean(in.ResourceID)}
+	}
+	return out
+}
+
+// resolver holds the resolved node per collection for one cost row.
+type resolver struct {
+	c       *Catalog
+	slots   map[string]*node
+	pending map[string]string // unmatched tag values by collection
+}
+
+// set fills n's collection slot if it is still empty.
+func (r *resolver) set(n *node) bool {
+	if n == nil || r.slots[n.coll] != nil {
+		return false
+	}
+	r.slots[n.coll] = n
+	return true
+}
+
+// up fills parents from resolved nodes, most specific level first, until nothing changes.
+func (r *resolver) up() bool {
+	filled := false
+	for changed := true; changed; {
+		changed = false
+		for i := len(Schema) - 1; i >= 0; i-- {
+			n := r.slots[Schema[i].Name]
+			if n == nil {
+				continue
+			}
+			for _, ref := range Schema[i].Refs {
+				if r.set(n.refs[ref.Field]) {
+					changed, filled = true, true
+				}
+			}
+			for _, parents := range n.multi {
+				if len(parents) == 1 && r.set(parents[0]) {
+					changed, filled = true, true
+				}
+			}
+		}
+	}
+	return filled
+}
+
+// narrow fills one empty organizational level from the candidates offered by every resolved
+// node, intersected: a resolved parent offers its children there (top-down) and a resolved
+// child offers its many-to-many parents there (bottom-up, e.g. an Environment shared by
+// several Apps). One candidate fills the level. Several candidates that all share the same
+// parent fill that parent instead, so bottom-up continues through an ambiguous level (a shared
+// Environment whose Apps all belong to one Project still resolves the Project and BU).
+// It returns after the first fill so bottom-up runs again.
+func (r *resolver) narrow(given map[string]bool) bool {
+	for _, target := range Schema {
+		if target.Catalog || target.Junction || given[target.Name] || r.slots[target.Name] != nil {
+			continue
+		}
+		cand := r.candidates(target.Name)
+		if len(cand) == 1 {
+			return r.set(cand[0])
+		}
+		if len(cand) > 1 {
+			for _, ref := range target.Refs {
+				if r.set(commonRef(cand, ref.Field)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// candidates intersects what every resolved node offers for coll, in a stable order.
+// It returns nil when no resolved node constrains coll.
+func (r *resolver) candidates(coll string) []*node {
+	var cand []*node
+	constrained := false
+	for _, spec := range Schema {
+		n := r.slots[spec.Name]
+		if n == nil {
+			continue
+		}
+		offer := n.children[coll]
+		if len(offer) == 0 {
+			offer = n.multi[coll]
+		}
+		if len(offer) == 0 {
+			continue
+		}
+		if !constrained {
+			cand, constrained = append([]*node(nil), offer...), true
+			continue
+		}
+		keep := cand[:0]
+		for _, c := range cand {
+			for _, o := range offer {
+				if c == o {
+					keep = append(keep, c)
+					break
+				}
+			}
+		}
+		cand = keep
+	}
+	return cand
+}
+
+// commonRef returns the node every candidate references through field, or nil.
+func commonRef(cand []*node, field string) *node {
+	var common *node
+	for _, c := range cand {
+		p := c.refs[field]
+		if p == nil || (common != nil && p != common) {
+			return nil
+		}
+		common = p
+	}
+	return common
+}
+
+// matchPendingInScope matches unmatched tag values among the children of resolved parents,
+// so a name like "Production" resolves once its App is known.
+func (r *resolver) matchPendingInScope() bool {
+	changed := false
+	for coll, raw := range r.pending {
+		if r.slots[coll] != nil {
+			continue
+		}
+		for _, spec := range Schema {
+			parent := r.slots[spec.Name]
+			if parent == nil {
+				continue
+			}
+			var hit *node
+			n := 0
+			for _, child := range parent.children[coll] {
+				if key(child.id) == key(raw) || key(child.name) == key(raw) {
+					hit = child
+					n++
+				}
+			}
+			if n == 1 && r.set(hit) {
+				changed = true
+				break
+			}
+		}
+	}
+	return changed
+}
+
+// slot returns the resolved slot, or the unmatched tag value as a name.
+func (r *resolver) slot(coll string) Slot {
+	if n := r.slots[coll]; n != nil {
+		return n.slot()
+	}
+	return Slot{Name: r.pending[coll]}
+}
+
+// slotOf returns the node's slot, or the raw sensed value as a name when unmatched.
+func slotOf(n *node, raw string) Slot {
+	if n != nil {
+		return n.slot()
+	}
+	return Slot{Name: clean(raw)}
 }

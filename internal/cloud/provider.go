@@ -21,8 +21,10 @@ type CostRecord struct {
 	Frequency    string            `json:"frequency"`              // "HOURLY", "DAILY", "MONTHLY"
 	Unit         string            `json:"unit"`                   // e.g. USD, Hours, GB-Mo, Requests
 	Currency     string            `json:"currency"`               // USD
+	CSP          string            `json:"csp,omitempty"`          // Cloud service provider, e.g. AWS
 	Region       string            `json:"region"`
 	UsageType    string            `json:"usage_type"`
+	ResourceID   string            `json:"resource_id,omitempty"` // Set when sensed with resource-level granularity
 	PrimaryTag   string            `json:"primary_tag,omitempty"`
 	SecondaryTag string            `json:"secondary_tag,omitempty"`
 	BusinessUnit string            `json:"business_unit,omitempty"`
@@ -106,6 +108,19 @@ type EnrichedRecord struct {
 	CostCenterID       string    `json:"cost_center_id,omitempty"`
 	CustomerFunctionID string    `json:"customer_function_id,omitempty"`
 	CustomerFunction   string    `json:"customer_function,omitempty"`
+	CSPID              string    `json:"csp_id,omitempty"`
+	CSP                string    `json:"csp,omitempty"`
+	RegionID           string    `json:"region_id,omitempty"`
+	Region             string    `json:"region,omitempty"`
+	ServiceID          string    `json:"service_id,omitempty"`
+	ServiceUsageID     string    `json:"service_usage_id,omitempty"`
+	ServiceUsage       string    `json:"service_usage,omitempty"`
+	UsageID            string    `json:"usage_id,omitempty"`
+	Usage              string    `json:"usage,omitempty"`
+	ResourceGroupID    string    `json:"resource_group_id,omitempty"`
+	ResourceGroup      string    `json:"resource_group,omitempty"`
+	ResourceID         string    `json:"resource_id,omitempty"`
+	Resource           string    `json:"resource,omitempty"`
 	Timestamp          time.Time `json:"timestamp"`
 }
 

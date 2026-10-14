@@ -1,383 +1,487 @@
 package taxonomy
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestLoadSampleTaxonomy(t *testing.T) {
-	root := filepath.Join("..", "..", "taxonomy")
-	cat, err := Load(filepath.Join(root, "project_taxonomy.json"), filepath.Join(root, "business_taxonomy.json"))
+func sampleCatalog(t *testing.T) *Catalog {
+	t.Helper()
+	cat, err := Load(filepath.Join("..", "..", "taxonomy", "taxonomy.json"))
 	if err != nil {
-		t.Fatalf("Load sample taxonomy: %v", err)
+		t.Fatalf("load sample taxonomy: %v", err)
 	}
+	return cat
+}
 
-	out := cat.Resolve(Input{
-		AccountID: "100000000001",
-		Service:   "Amazon Elastic Compute Cloud - Compute",
-		Project:   "Untagged",
-		App:       "Untagged",
-	})
-	if out.Project != (Slot{ID: "BU-DIGITAL", Name: "Digital"}) {
-		t.Fatalf("project: %+v", out.Project)
+func buildJSON(t *testing.T, doc string) (*Catalog, error) {
+	t.Helper()
+	var snap Snapshot
+	if err := json.Unmarshal([]byte(doc), &snap); err != nil {
+		t.Fatalf("parse: %v", err)
 	}
-	if out.BusinessUnit != out.Project {
-		t.Fatalf("project must behave as business unit, got %+v vs %+v", out.Project, out.BusinessUnit)
-	}
-	if out.App != (Slot{ID: "OWN-PAY", Name: "Payments"}) || out.Owner != out.App {
-		t.Fatalf("app/owner: %+v %+v", out.App, out.Owner)
-	}
-	if out.Environment != (Slot{ID: "CC-PROD", Name: "Production"}) || out.CostCenter != out.Environment {
-		t.Fatalf("environment/cost center: %+v %+v", out.Environment, out.CostCenter)
-	}
-	if out.ServiceCategory != (Slot{ID: "SC-COMPUTE", Name: "Compute"}) {
-		t.Fatalf("service category: %+v", out.ServiceCategory)
-	}
-	if out.CustomerFunction != (Slot{ID: "CF-CHECKOUT", Name: "Checkout"}) {
-		t.Fatalf("customer function: %+v", out.CustomerFunction)
+	return Build(&snap)
+}
+
+func TestSampleTaxonomiesLoadWithoutWarnings(t *testing.T) {
+	for _, name := range []string{"taxonomy.json", "taxonomy_tenant_a.json"} {
+		cat, err := Load(filepath.Join("..", "..", "taxonomy", name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(cat.Warnings()) > 0 {
+			t.Fatalf("%s: unexpected warnings %v", name, cat.Warnings())
+		}
 	}
 }
 
-func TestServiceDoesNotStealUnmappedAccount(t *testing.T) {
-	cat := loadFixture(t)
-	out := cat.Resolve(Input{
-		AccountID: "999900001111",
-		Service:   "Amazon Elastic Compute Cloud - Compute",
+func TestResolveFullHierarchyFromResource(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{
+		AccountID:  "444455556666",
+		CSP:        "AWS",
+		Region:     "ap-southeast-1",
+		Service:    "Amazon Elastic Compute Cloud - Compute",
+		UsageType:  "APS1-BoxUsage:t3.medium",
+		ResourceID: "i-0444455556666a001",
+		Project:    "Untagged",
+		App:        "Untagged",
 	})
+
+	want := map[string]Slot{
+		"Account":          {ID: "444455556666", Name: "lz-stg-payments"},
+		"Environment":      {ID: "ENV-PAY-STG", Name: "Staging"},
+		"App":              {ID: "APP-GATEWAY", Name: "Payment Gateway"},
+		"Project":          {ID: "PRJ-PAYMENTS", Name: "Payments Platform"},
+		"BusinessUnit":     {ID: "BU-DIGITAL", Name: "Digital"},
+		"CostCenter":       {ID: "CC-PAY", Name: "Payments"},
+		"Owner":            {ID: "OWN-PAY", Name: "Payments Team"},
+		"CustomerFunction": {ID: "CF-CHECKOUT", Name: "Checkout"},
+		"CSP":              {ID: "AWS", Name: "Amazon Web Services"},
+		"Region":           {ID: "ap-southeast-1", Name: "Asia Pacific (Singapore)"},
+		"ServiceCategory":  {ID: "SC-COMPUTE", Name: "Compute"},
+		"Service":          {ID: "AmazonEC2", Name: "Amazon Elastic Compute Cloud - Compute"},
+		"ServiceUsage":     {ID: "SU-EC2-INSTANCE", Name: "EC2 Instance Hours"},
+		"Usage":            {ID: "BoxUsage:t3.medium", Name: "t3.medium instance hours"},
+		"ResourceGroup":    {ID: "RG-CHECKOUT", Name: "Checkout Compute"},
+		"Resource":         {ID: "i-0444455556666a001", Name: "checkout-staging-node-1"},
+	}
+	got := map[string]Slot{
+		"Account": out.Account, "Environment": out.Environment, "App": out.App, "Project": out.Project,
+		"BusinessUnit": out.BusinessUnit, "CostCenter": out.CostCenter, "Owner": out.Owner,
+		"CustomerFunction": out.CustomerFunction, "CSP": out.CSP, "Region": out.Region,
+		"ServiceCategory": out.ServiceCategory, "Service": out.Service, "ServiceUsage": out.ServiceUsage,
+		"Usage": out.Usage, "ResourceGroup": out.ResourceGroup, "Resource": out.Resource,
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s = %+v, want %+v", k, got[k], w)
+		}
+	}
+}
+
+func TestResolveWithoutResourcePicksOnlyOwner(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "777788889999", Service: "AmazonS3"})
+	if out.CostCenter.ID != "CC-DATA" || out.BusinessUnit.ID != "BU-DATA" {
+		t.Fatalf("cost center/bu from app: %+v %+v", out.CostCenter, out.BusinessUnit)
+	}
+	// CC-DATA has a single owner with a single customer function.
+	if out.Owner.ID != "OWN-DATA" || out.CustomerFunction.ID != "CF-LAKE" {
+		t.Fatalf("owner/func should follow the only child: %+v %+v", out.Owner, out.CustomerFunction)
+	}
+	if out.ServiceCategory.ID != "SC-STORAGE" {
+		t.Fatalf("service category: %+v", out.ServiceCategory)
+	}
+}
+
+func TestSharedEnvironmentResolvesCommonParents(t *testing.T) {
+	// ENV-PAY-PROD hosts APP-GATEWAY and APP-ORDERS: the App is ambiguous, but both Apps are
+	// in PRJ-PAYMENTS and CC-PAY, so bottom-up continues through the ambiguous level.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333"})
+	if out.Environment.ID != "ENV-PAY-PROD" {
+		t.Fatalf("environment: %+v", out.Environment)
+	}
+	if out.App != (Slot{}) {
+		t.Fatalf("app must stay empty when the environment hosts several apps: %+v", out.App)
+	}
+	if out.Project.ID != "PRJ-PAYMENTS" || out.CostCenter.ID != "CC-PAY" || out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("common parents: project=%+v cc=%+v bu=%+v", out.Project, out.CostCenter, out.BusinessUnit)
+	}
+	// CC-PAY has one owner, but OWN-PAY has two customer functions.
+	if out.Owner.ID != "OWN-PAY" || out.CustomerFunction != (Slot{}) {
+		t.Fatalf("owner/function: %+v %+v", out.Owner, out.CustomerFunction)
+	}
+}
+
+func TestResourceEnvironmentWinsOverAccount(t *testing.T) {
+	// A staging database living in the prod account.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333", ResourceID: "arn:aws:rds:ap-southeast-1:111122223333:db:inventory"})
+	if out.Environment.ID != "ENV-PAY-STG" {
+		t.Fatalf("resource environment must win: %+v", out.Environment)
+	}
+	// ENV-PAY-STG hosts only APP-GATEWAY.
+	if out.App.ID != "APP-GATEWAY" || out.Project.ID != "PRJ-PAYMENTS" || out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("resource → environment → app → project → bu: %+v %+v %+v", out.App, out.Project, out.BusinessUnit)
+	}
+	if out.Account.ID != "111122223333" {
+		t.Fatalf("account still reported: %+v", out.Account)
+	}
+}
+
+func TestAppWithManyEnvironmentsAndEnvironmentWithManyApps(t *testing.T) {
+	cat, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU", "name": "BU"}],
+	  "cost_centers": [{"id": "CC", "name": "CC", "business_unit": "BU"}],
+	  "projects": [
+	    {"id": "P1", "name": "Project One", "business_unit": "BU"},
+	    {"id": "P2", "name": "Project Two", "business_unit": "BU"}
+	  ],
+	  "apps": [
+	    {"id": "A1", "name": "App One", "project": "P1", "cost_center": "CC"},
+	    {"id": "A2", "name": "App Two", "project": "P2", "cost_center": "CC"}
+	  ],
+	  "environments": [{"id": "SHARED", "name": "Shared Prod"}, {"id": "A1-DEV", "name": "App One Dev"}],
+	  "app_environments": [
+	    {"environment": "SHARED", "app": "A1"},
+	    {"environment": "SHARED", "app": "A2"},
+	    {"environment": "A1-DEV", "app": "A1"}
+	  ],
+	  "accounts": [{"id": "1", "name": "shared", "environment": "SHARED"}, {"id": "2", "name": "dev", "environment": "A1-DEV"}]
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Shared environment + project tag: the intersection leaves one app.
+	if out := cat.Resolve(Input{AccountID: "1", Project: "P2"}); out.App.ID != "A2" {
+		t.Fatalf("shared env ∩ project apps should give A2: %+v", out.App)
+	}
+	// Shared environment alone: apps are in different projects, so only the common CC resolves.
+	out := cat.Resolve(Input{AccountID: "1"})
+	if out.App != (Slot{}) || out.Project != (Slot{}) || out.CostCenter.ID != "CC" || out.BusinessUnit.ID != "BU" {
+		t.Fatalf("shared env alone: app=%+v project=%+v cc=%+v bu=%+v", out.App, out.Project, out.CostCenter, out.BusinessUnit)
+	}
+	// App with two environments: the account picks the environment, the environment the app.
+	if out := cat.Resolve(Input{AccountID: "2"}); out.App.ID != "A1" || out.Project.ID != "P1" {
+		t.Fatalf("dev account: %+v %+v", out.App, out.Project)
+	}
+	// App tag only: two environments, so environment stays empty.
+	if out := cat.Resolve(Input{App: "A1"}); out.Environment != (Slot{}) {
+		t.Fatalf("app with two environments must not pick one: %+v", out.Environment)
+	}
+}
+
+func TestJunctionValidation(t *testing.T) {
+	_, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU", "name": "BU"}],
+	  "cost_centers": [{"id": "CC", "name": "CC", "business_unit": "BU"}],
+	  "projects": [{"id": "P", "name": "P", "business_unit": "BU"}],
+	  "apps": [{"id": "A", "name": "A", "project": "P", "cost_center": "CC"}],
+	  "environments": [{"id": "E", "name": "E"}],
+	  "app_environments": [
+	    {"environment": "E", "app": "A"},
+	    {"environment": "E", "app": "A"},
+	    {"environment": "E", "app": "NOPE"},
+	    {"app": "A"}
+	  ]
+	}`)
+	if err == nil {
+		t.Fatal("expected junction errors")
+	}
+	for _, want := range []string{"duplicate link", `app "NOPE" does not match`, "app_environments[3]: environment is required"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
+	}
+
+	cat, err := buildJSON(t, `{"environments": [{"id": "E", "name": "E"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Warnings()) != 1 || !strings.Contains(cat.Warnings()[0], "not linked to any App") {
+		t.Fatalf("expected unlinked environment warning, got %v", cat.Warnings())
+	}
+}
+
+func TestUnmappedAccountDoesNotBorrowHierarchy(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "999900001111", Service: "AmazonEC2"})
 	if out.ServiceCategory.ID != "SC-COMPUTE" {
 		t.Fatalf("service should still map to its category, got %+v", out.ServiceCategory)
 	}
-	if out.Project.ID != "" || out.CustomerFunction.ID != "" || out.Environment.ID != "" {
-		t.Fatalf("unmapped account must not inherit another environment: %+v", out)
+	if out.Project != (Slot{}) || out.Environment != (Slot{}) || out.CostCenter != (Slot{}) || out.BusinessUnit != (Slot{}) {
+		t.Fatalf("unmapped account must not inherit a hierarchy: %+v", out)
+	}
+	if out.Account.ID != "999900001111" {
+		t.Fatalf("raw account id should pass through: %+v", out.Account)
 	}
 }
 
-func TestResolveKeepsExplicitTags(t *testing.T) {
-	cat := loadFixture(t)
-	out := cat.Resolve(Input{
-		AccountID: "100000000001",
-		Project:   "Kept Project",
-		App:       "Kept App",
-	})
-	if out.Project.Name != "Kept Project" || out.App.Name != "Kept App" {
-		t.Fatalf("explicit tags were replaced: %+v %+v", out.Project, out.App)
+func TestUnmatchedTagsDoNotBlockBottomUp(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "777788889999", Project: "CloudMigration", App: "PaymentGateway"})
+	if out.Environment.ID != "ENV-LAKE-PROD" || out.App.ID != "APP-LAKE" || out.Project.ID != "PRJ-LAKEHOUSE" {
+		t.Fatalf("account must still resolve upward: env=%+v app=%+v project=%+v", out.Environment, out.App, out.Project)
 	}
-	if out.BusinessUnit.Name != "Kept Project" || out.Owner.Name != "Kept App" {
-		t.Fatalf("explicit tags must still behave across hierarchies: %+v %+v", out.BusinessUnit, out.Owner)
-	}
-	if out.Environment.ID != "CC-PROD" {
-		t.Fatalf("empty environment should still map from account, got %+v", out.Environment)
+	if out.BusinessUnit.ID != "BU-DATA" || out.CostCenter.ID != "CC-DATA" {
+		t.Fatalf("bu/cc: %+v %+v", out.BusinessUnit, out.CostCenter)
 	}
 }
 
-func TestAppMapsToProject(t *testing.T) {
-	dir := t.TempDir()
-	business := `{
-	  "businessUnits": [{
-	    "id": "BU-A", "name": "Alpha",
-	    "owners": [
-	      {"id": "OWN-1", "name": "One", "costCenters": [{"id": "CC-1", "name": "Prod", "customerFuncs": [{"id": "CF-1", "name": "Func"}]}]},
-	      {"id": "OWN-2", "name": "Two", "costCenters": [{"id": "CC-2", "name": "Dev", "customerFuncs": []}]}
-	    ]
-	  }]
-	}`
-	project := `{
-	  "projects": [
-	    {"id": "BU-A", "name": "Alpha", "businessUnitId": "BU-A", "apps": [
-	      {"id": "OWN-2", "name": "Two", "ownerId": "OWN-2", "environments": [
-	        {"id": "CC-2", "name": "Dev", "costCenterId": "CC-2", "accounts": [], "serviceCategories": []}
-	      ]},
-	      {"id": "OWN-1", "name": "One", "ownerId": "OWN-1", "projectId": "BU-A", "environments": [
-	        {"id": "CC-1", "name": "Prod", "costCenterId": "CC-1", "accounts": [
-	          {"id": "acct-1", "name": "prod-acct", "environmentId": "CC-2"}
-	        ], "serviceCategories": [
-	          {"id": "SC-1", "name": "Compute", "customerFuncId": "CF-1", "services": [
-	            {"id": "svc-1", "name": "Lambda", "serviceCatId": "SC-1"}
-	          ]}
-	        ]}
-	      ]}
-	    ]}
+func TestUnmatchedTagKeptWhenNothingDerives(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "999900001111", Project: "Kept Project"})
+	if out.Project != (Slot{Name: "Kept Project"}) {
+		t.Fatalf("unmatched tag should be kept when the slot stays empty: %+v", out.Project)
+	}
+}
+
+func TestMatchedTagWinsOverAccount(t *testing.T) {
+	// Account maps to APP-GATEWAY, but the row is tagged with another valid app.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333", App: "Order Processor"})
+	if out.App.ID != "APP-ORDERS" {
+		t.Fatalf("matched tag must win: %+v", out.App)
+	}
+	if out.Environment.ID != "ENV-PAY-PROD" || out.Project.ID != "PRJ-PAYMENTS" {
+		t.Fatalf("other levels still derive: env=%+v project=%+v", out.Environment, out.Project)
+	}
+}
+
+func TestTopDownFillsUniqueChildren(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{BusinessUnit: "BU-DATA"})
+	want := map[string]string{
+		"project": "PRJ-LAKEHOUSE", "app": "APP-LAKE", "environment": "ENV-LAKE-PROD",
+		"account": "777788889999", "cost_center": "CC-DATA", "owner": "OWN-DATA", "customer_func": "CF-LAKE",
+	}
+	got := map[string]string{
+		"project": out.Project.ID, "app": out.App.ID, "environment": out.Environment.ID,
+		"account": out.Account.ID, "cost_center": out.CostCenter.ID, "owner": out.Owner.ID, "customer_func": out.CustomerFunction.ID,
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s = %q, want %q", k, got[k], w)
+		}
+	}
+	// Catalog levels are never filled top-down.
+	if out.ServiceCategory != (Slot{}) || out.Region != (Slot{}) || out.ResourceGroup != (Slot{}) {
+		t.Errorf("catalog levels must stay empty: %+v %+v %+v", out.ServiceCategory, out.Region, out.ResourceGroup)
+	}
+}
+
+func TestTopDownStopsAtAmbiguity(t *testing.T) {
+	// PRJ-PAYMENTS has two apps, so nothing below the project can be chosen.
+	out := sampleCatalog(t).Resolve(Input{Project: "PRJ-PAYMENTS"})
+	if out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("bottom-up from project: %+v", out.BusinessUnit)
+	}
+	if out.App != (Slot{}) || out.Environment != (Slot{}) || out.Account != (Slot{}) {
+		t.Fatalf("ambiguous children must stay empty: app=%+v env=%+v acct=%+v", out.App, out.Environment, out.Account)
+	}
+}
+
+func TestTopDownNeverReplacesRowAccount(t *testing.T) {
+	// The row has its own (unknown) account; top-down must not substitute another one.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "999900001111", App: "APP-LAKE"})
+	if out.Account.ID != "999900001111" || out.Account.Name != "" {
+		t.Fatalf("row account must pass through: %+v", out.Account)
+	}
+	if out.Environment.ID != "ENV-LAKE-PROD" {
+		t.Fatalf("environment still derives top-down from the app: %+v", out.Environment)
+	}
+}
+
+func TestAmbiguousEnvironmentNameMatchesWithinApp(t *testing.T) {
+	// "Production" exists under APP-GATEWAY and APP-LAKE; the App tag scopes it.
+	out := sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Production"})
+	if out.Environment.ID != "ENV-PAY-PROD" {
+		t.Fatalf("environment name should match within its app: %+v", out.Environment)
+	}
+	out = sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Staging"})
+	if out.Environment.ID != "ENV-PAY-STG" {
+		t.Fatalf("staging: %+v", out.Environment)
+	}
+}
+
+func TestResolveTagByNameDrivesHierarchy(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{Project: "Lakehouse", App: "Data Lakehouse"})
+	if out.Project.ID != "PRJ-LAKEHOUSE" || out.App.ID != "APP-LAKE" {
+		t.Fatalf("tags by name: %+v %+v", out.Project, out.App)
+	}
+	if out.BusinessUnit.ID != "BU-DATA" || out.CostCenter.ID != "CC-DATA" {
+		t.Fatalf("project must ref BU and app must ref cost center: %+v %+v", out.BusinessUnit, out.CostCenter)
+	}
+}
+
+func TestRegionUniqueWithinCSP(t *testing.T) {
+	cat, err := buildJSON(t, `{
+	  "csps": [{"id": "AWS", "name": "AWS"}, {"id": "GCP", "name": "Google Cloud"}],
+	  "regions": [
+	    {"id": "asia-east", "name": "AWS Asia", "csp": "AWS"},
+	    {"id": "asia-east", "name": "GCP Asia", "csp": "GCP"}
 	  ]
-	}`
-	cat := writeAndLoad(t, dir, project, business)
-	out := cat.Resolve(Input{App: "OWN-1"})
-	if out.Project.ID != "BU-A" || out.Owner.ID != "OWN-1" {
-		t.Fatalf("app should map to its project and behave as owner: %+v", out)
+	}`)
+	if err != nil {
+		t.Fatalf("same region id in different CSPs must be allowed: %v", err)
 	}
-	mapped := cat.Resolve(Input{AccountID: "acct-1"})
-	if mapped.Environment.ID != "CC-2" {
-		t.Fatalf("account should map to environmentId CC-2, got %+v", mapped.Environment)
+	if out := cat.Resolve(Input{CSP: "GCP", Region: "asia-east"}); out.Region.Name != "GCP Asia" {
+		t.Fatalf("region should resolve within its CSP: %+v", out.Region)
 	}
-	svc := cat.Resolve(Input{Service: "Lambda"})
-	if svc.ServiceCategory.ID != "SC-1" || svc.CustomerFunction.ID != "CF-1" {
-		t.Fatalf("service should map to category and customer function: %+v", svc)
+	if out := cat.Resolve(Input{Region: "asia-east"}); out.Region.ID != "" {
+		t.Fatalf("region without CSP is ambiguous, got %+v", out.Region)
+	}
+
+	_, err = buildJSON(t, `{
+	  "csps": [{"id": "AWS", "name": "AWS"}],
+	  "regions": [
+	    {"id": "us-east-1", "name": "A", "csp": "AWS"},
+	    {"id": "us-east-1", "name": "B", "csp": "AWS"}
+	  ]
+	}`)
+	if err == nil || !strings.Contains(err.Error(), "duplicate id") {
+		t.Fatalf("duplicate region within a CSP must fail, got %v", err)
 	}
 }
 
-func TestMustBehaveRejectsDifferentIDs(t *testing.T) {
-	dir := t.TempDir()
-	business := `{"businessUnits":[{"id":"BU-A","name":"Alpha","owners":[{"id":"OWN-1","name":"One","costCenters":[{"id":"CC-1","name":"Prod","customerFuncs":[]}]}]}]}`
-	project := `{"projects":[{"id":"PRJ-OTHER","name":"Alpha","businessUnitId":"BU-A","apps":[]}]}`
-	_, err := Load(writePair(t, dir, project, business))
+func TestValidationReportsAllErrors(t *testing.T) {
+	_, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU-1", "name": "One"}],
+	  "cost_centers": [{"id": "CC-1", "name": "CC"}],
+	  "projects": [{"id": "P-1", "name": "P", "business_unit": "BU-404"}],
+	  "apps": [{"id": "A-1", "name": "A", "project": "P-1"}],
+	  "accounts": [{"id": "", "name": "no id"}]
+	}`)
 	if err == nil {
-		t.Fatal("expected project id to be rejected when it does not behave as the business unit id")
+		t.Fatal("expected validation errors")
+	}
+	for _, want := range []string{
+		`Cost Center "CC-1": business_unit is required`,
+		`Project "P-1": business_unit "BU-404" does not match`,
+		`App "A-1": cost_center is required`,
+		`accounts[0]: id and name are required`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing error %q in:\n%v", want, err)
+		}
 	}
 }
 
-func TestHierarchyTaxonomyRelations(t *testing.T) {
+func TestRefsAcceptUniqueNames(t *testing.T) {
+	cat, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU-1", "name": "One"}],
+	  "cost_centers": [{"id": "CC-1", "name": "Ops", "business_unit": "One"}],
+	  "projects": [{"id": "P-1", "name": "P", "business_unit": "one"}],
+	  "apps": [{"id": "A-1", "name": "A", "project": "P", "cost_center": "Ops"}]
+	}`)
+	if err != nil {
+		t.Fatalf("refs by name: %v", err)
+	}
+	if out := cat.Resolve(Input{App: "A-1"}); out.BusinessUnit.ID != "BU-1" {
+		t.Fatalf("bu via app→project: %+v", out.BusinessUnit)
+	}
+}
+
+func TestAppCostCenterInOtherBusinessUnitWarns(t *testing.T) {
+	cat, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU-1", "name": "One"}, {"id": "BU-2", "name": "Two"}],
+	  "cost_centers": [{"id": "CC-2", "name": "Two CC", "business_unit": "BU-2"}],
+	  "projects": [{"id": "P-1", "name": "P", "business_unit": "BU-1"}],
+	  "apps": [{"id": "A-1", "name": "A", "project": "P-1", "cost_center": "CC-2"}]
+	}`)
+	if err != nil {
+		t.Fatalf("mismatch must only warn: %v", err)
+	}
+	if len(cat.Warnings()) != 1 || !strings.Contains(cat.Warnings()[0], `App "A-1"`) {
+		t.Fatalf("expected one warning for A-1, got %v", cat.Warnings())
+	}
+	// Business unit follows the project; cost center follows the app.
+	out := cat.Resolve(Input{App: "A-1"})
+	if out.BusinessUnit.ID != "BU-1" || out.CostCenter.ID != "CC-2" {
+		t.Fatalf("got bu=%+v cc=%+v", out.BusinessUnit, out.CostCenter)
+	}
+}
+
+func TestDuplicateNamesAreAllowedButNotMatched(t *testing.T) {
+	cat := sampleCatalog(t)
+	// Two environments are named "Production" and nothing else scopes the tag.
+	if out := cat.Resolve(Input{Environment: "Production"}); out.Environment != (Slot{Name: "Production"}) {
+		t.Fatalf("ambiguous name must not resolve: %+v", out.Environment)
+	}
+}
+
+func TestSnapshotRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out", "taxonomy_x.json")
+	snap, err := ReadSnapshot(filepath.Join("..", "..", "taxonomy", "taxonomy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSnapshot(path, snap); err != nil {
+		t.Fatal(err)
+	}
+	again, err := ReadSnapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spec := range Schema {
+		if len(again.Rows(spec.Name)) != len(snap.Rows(spec.Name)) {
+			t.Fatalf("%s: %d rows after round trip, want %d", spec.Name, len(again.Rows(spec.Name)), len(snap.Rows(spec.Name)))
+		}
+	}
+	if again.Tenant != "default" {
+		t.Fatalf("tenant: %q", again.Tenant)
+	}
+}
+
+func TestNumericIDsAreKeptVerbatim(t *testing.T) {
+	var snap Snapshot
+	if err := json.Unmarshal([]byte(`{"accounts": [{"id": 100000000001, "name": "acct"}]}`), &snap); err != nil {
+		t.Fatal(err)
+	}
+	if got := snap.Rows(Accounts)[0].ID(); got != "100000000001" {
+		t.Fatalf("id = %q", got)
+	}
+}
+
+func TestUnknownCollectionRejected(t *testing.T) {
+	var snap Snapshot
+	if err := json.Unmarshal([]byte(`{"owner": []}`), &snap); err == nil {
+		t.Fatal("expected unknown collection error")
+	}
+}
+
+func TestPathsAndDiscovery(t *testing.T) {
+	if got := ResolvePath("", ""); got != filepath.Join("taxonomy", "taxonomy.json") {
+		t.Fatalf("default path: %s", got)
+	}
+	if got := ResolvePath("", "acme"); got != filepath.Join("taxonomy", "taxonomy_acme.json") {
+		t.Fatalf("tenant path: %s", got)
+	}
+	if got := ResolvePath("x.json", "acme"); got != "x.json" {
+		t.Fatalf("explicit path: %s", got)
+	}
+
 	dir := t.TempDir()
-	business := `{
-	  "businessUnits": [
-	    {
-	      "id": "BU-CORP",
-	      "name": "Corporate",
-	      "owners": [
-	        {
-	          "id": "OWN-FIN",
-	          "name": "Finance",
-	          "costCenters": [
-	            {
-	              "id": "CC-FIN-PROD",
-	              "name": "Finance Production",
-	              "customerFuncs": [
-	                { "id": "CF-GL", "name": "General Ledger" }
-	              ]
-	            }
-	          ]
-	        }
-	      ]
-	    }
-	  ]
-	}`
-
-	// Test mapping by name as well as ID:
-	// - ProjectID/Name behaves as BusinessUnitID/Name
-	// - AppID/Name behaves as OwnerID/Name
-	// - EnvironmentID/Name behaves as CostCenterID/Name
-	// - App mapped to Project by Name ("Corporate")
-	// - Account mapped to Environment by Name ("Finance Production")
-	// - Service mapped to ServiceCategory by Name ("Ledger Compute")
-	project := `{
-	  "projects": [
-	    {
-	      "id": "BU-CORP",
-	      "name": "Corporate",
-	      "businessUnitId": "BU-CORP",
-	      "apps": [
-	        {
-	          "id": "OWN-FIN",
-	          "name": "Finance",
-	          "ownerId": "OWN-FIN",
-	          "projectId": "BU-CORP",
-	          "environments": [
-	            {
-	              "id": "CC-FIN-PROD",
-	              "name": "Finance Production",
-	              "costCenterName": "Finance Production",
-	              "accounts": [
-	                {
-	                  "id": "999888777666",
-	                  "name": "lz-corp-fin-prod",
-	                  "environmentName": "Finance Production"
-	                }
-	              ],
-	              "serviceCategories": [
-	                {
-	                  "id": "SC-LEDGER",
-	                  "name": "Ledger Compute",
-	                  "customerFuncName": "General Ledger",
-	                  "services": [
-	                    {
-	                      "id": "AWSLambda",
-	                      "name": "AWS Lambda Serverless",
-	                      "serviceCatName": "Ledger Compute"
-	                    }
-	                  ]
-	                }
-	              ]
-	            }
-	          ]
-	        }
-	      ]
-	    }
-	  ]
-	}`
-
-	cat := writeAndLoad(t, dir, project, business)
-
-	// 1. Account -> Environment mapping + CostCenter behave + App/Owner + Project/BusinessUnit
-	res := cat.Resolve(Input{
-		AccountID: "999888777666",
-		Service:   "AWSLambda",
-	})
-
-	// Rule 1: ProjectID/Name must behave BusinessUnitID/Name
-	if res.Project.ID != "BU-CORP" || res.Project.Name != "Corporate" {
-		t.Errorf("Project mismatch: %+v", res.Project)
+	for _, f := range []string{"taxonomy.json", "taxonomy_b.json", "taxonomy_a.json", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if res.BusinessUnit.ID != res.Project.ID || res.BusinessUnit.Name != res.Project.Name {
-		t.Errorf("Project must behave as BusinessUnit: Project=%+v BU=%+v", res.Project, res.BusinessUnit)
-	}
-
-	// Rule 2: AppID/Name must behave OwnerID/Name
-	if res.App.ID != "OWN-FIN" || res.App.Name != "Finance" {
-		t.Errorf("App mismatch: %+v", res.App)
-	}
-	if res.Owner.ID != res.App.ID || res.Owner.Name != res.App.Name {
-		t.Errorf("App must behave as Owner: App=%+v Owner=%+v", res.App, res.Owner)
-	}
-
-	// Rule 3: EnvironmentID/Name must behave CostCenterID/Name
-	if res.Environment.ID != "CC-FIN-PROD" || res.Environment.Name != "Finance Production" {
-		t.Errorf("Environment mismatch: %+v", res.Environment)
-	}
-	if res.CostCenter.ID != res.Environment.ID || res.CostCenter.Name != res.Environment.Name {
-		t.Errorf("Environment must behave as CostCenter: Env=%+v CC=%+v", res.Environment, res.CostCenter)
-	}
-
-	// Rule 4: AppID/Name can be mapped to ProjectID/Name
-	appRes := cat.Resolve(Input{App: "Finance"})
-	if appRes.Project.ID != "BU-CORP" || appRes.Project.Name != "Corporate" {
-		t.Errorf("App mapped to Project failed: %+v", appRes.Project)
-	}
-
-	// Rule 5: AccountID/Name can be mapped to EnvironmentID/Name
-	acctRes := cat.Resolve(Input{AccountName: "lz-corp-fin-prod"})
-	if acctRes.Environment.ID != "CC-FIN-PROD" || acctRes.Environment.Name != "Finance Production" {
-		t.Errorf("Account mapped to Environment failed: %+v", acctRes.Environment)
-	}
-
-	// Rule 6: ServiceID/Name can be mapped to ServiceCatID/Name
-	if res.ServiceCategory.ID != "SC-LEDGER" || res.ServiceCategory.Name != "Ledger Compute" {
-		t.Errorf("Service mapped to ServiceCategory failed: %+v", res.ServiceCategory)
-	}
-	if res.CustomerFunction.ID != "CF-GL" || res.CustomerFunction.Name != "General Ledger" {
-		t.Errorf("CustomerFunction linked failed: %+v", res.CustomerFunction)
-	}
-}
-
-func TestLoadOptionalMissingDefaults(t *testing.T) {
-	t.Chdir(t.TempDir())
-	cat, err := LoadOptional("", "")
+	tenants, err := DiscoverTenants(dir)
 	if err != nil {
-		t.Fatalf("missing defaults should skip: %v", err)
-	}
-	if cat != nil {
-		t.Fatal("expected nil catalog when taxonomy files are absent")
-	}
-}
-
-func loadFixture(t *testing.T) *Catalog {
-	t.Helper()
-	root := filepath.Join("..", "..", "taxonomy")
-	cat, err := Load(filepath.Join(root, "project_taxonomy.json"), filepath.Join(root, "business_taxonomy.json"))
-	if err != nil {
-		t.Fatalf("load fixture: %v", err)
-	}
-	return cat
-}
-
-func writeAndLoad(t *testing.T, dir, project, business string) *Catalog {
-	t.Helper()
-	p, b := writePair(t, dir, project, business)
-	cat, err := Load(p, b)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	return cat
-}
-
-func writePair(t *testing.T, dir, project, business string) (string, string) {
-	t.Helper()
-	p := filepath.Join(dir, "project_taxonomy.json")
-	b := filepath.Join(dir, "business_taxonomy.json")
-	if err := os.WriteFile(p, []byte(project), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(b, []byte(business), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p, b
-}
-
-func TestTenantPathResolution(t *testing.T) {
-	if got := DefaultProjectPathForTenant("tenant_a"); got != "taxonomy/project_taxonomy_tenant_a.json" {
-		t.Errorf("expected taxonomy/project_taxonomy_tenant_a.json, got %s", got)
-	}
-	if got := DefaultBusinessPathForTenant("tenant_a"); got != "taxonomy/business_taxonomy_tenant_a.json" {
-		t.Errorf("expected taxonomy/business_taxonomy_tenant_a.json, got %s", got)
-	}
-	if got := DefaultProjectPathForTenant(""); got != DefaultProjectPath {
-		t.Errorf("expected %s, got %s", DefaultProjectPath, got)
-	}
-	if got := DefaultBusinessPathForTenant(""); got != DefaultBusinessPath {
-		t.Errorf("expected %s, got %s", DefaultBusinessPath, got)
-	}
-
-	// Explicit override takes precedence
-	if got := ResolveProjectTaxonomyPath("custom/path.json", "tenant_a"); got != "custom/path.json" {
-		t.Errorf("expected custom/path.json, got %s", got)
-	}
-	if got := ResolveBusinessTaxonomyPath("custom/biz.json", "tenant_a"); got != "custom/biz.json" {
-		t.Errorf("expected custom/biz.json, got %s", got)
+	if strings.Join(tenants, ",") != "a,b" {
+		t.Fatalf("tenants: %v", tenants)
 	}
 }
 
-func TestDiscoverTenants(t *testing.T) {
-	tempDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tempDir, "project_taxonomy_tenant_x.json"), []byte("{}"), 0o644); err != nil {
+func TestLoadOptional(t *testing.T) {
+	wd, _ := os.Getwd()
+	defer os.Chdir(wd)
+	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "business_taxonomy_tenant_x.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
+	if cat, err := LoadOptional("", ""); err != nil || cat != nil {
+		t.Fatalf("missing default should skip enrichment: %v %v", cat, err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "tenant_y_project_taxonomy.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tempDir, "project_taxonomy.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	tenants, err := DiscoverTenants(tempDir)
-	if err != nil {
-		t.Fatalf("DiscoverTenants error: %v", err)
-	}
-	if len(tenants) != 2 || tenants[0] != "tenant_x" || tenants[1] != "tenant_y" {
-		t.Errorf("expected [tenant_x, tenant_y], got %v", tenants)
+	if _, err := LoadOptional("missing.json", ""); err == nil {
+		t.Fatal("missing explicit path must fail")
 	}
 }
-
-func TestLoadTenantATaxonomy(t *testing.T) {
-	root := filepath.Join("..", "..", "taxonomy")
-	cat, err := LoadOptionalForTenant(
-		filepath.Join(root, "project_taxonomy_tenant_a.json"),
-		filepath.Join(root, "business_taxonomy_tenant_a.json"),
-		"tenant_a",
-	)
-	if err != nil {
-		t.Fatalf("Load tenant_a taxonomy: %v", err)
-	}
-	if cat == nil {
-		t.Fatal("expected non-nil catalog for tenant_a")
-	}
-
-	out := cat.Resolve(Input{
-		AccountID: "111122223333",
-		Service:   "Amazon Elastic Compute Cloud - Compute",
-	})
-	if out.Project.ID != "BU-RETAIL" || out.Project.Name != "Retail Platform" {
-		t.Errorf("expected BU-RETAIL project, got %+v", out.Project)
-	}
-	if out.App.ID != "OWN-COMMERCE" || out.App.Name != "E-Commerce" {
-		t.Errorf("expected OWN-COMMERCE app, got %+v", out.App)
-	}
-	if out.Environment.ID != "CC-RETAIL-PROD" || out.Environment.Name != "Retail Production" {
-		t.Errorf("expected CC-RETAIL-PROD environment, got %+v", out.Environment)
-	}
-	if out.CustomerFunction.ID != "CF-STOREFRONT" {
-		t.Errorf("expected CF-STOREFRONT customer function, got %+v", out.CustomerFunction)
-	}
-}
-
-
