@@ -1,7 +1,8 @@
 # Cost Hierarchy Taxonomy — Specification
 
 > Status: **agreed spec** (2026-10-14). Implementation status and remaining work:
-> `docs/handoff/finops-taxonomy-v2.md`.
+> `docs/handoff/finops-taxonomy-v2.md`. Shareable page with diagram:
+> [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu).
 
 ## 1. Notation
 

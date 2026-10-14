@@ -3,6 +3,8 @@
 > **Audience:** the next coding agent (Claude Code / Sonnet, or Antigravity / Gemini Flash).
 > Read this file top to bottom before you change any code. It is self-contained.
 > Branch: `claude/vigilant-feynman-0xz7te`. Last updated: 2026-10-14.
+> Shareable pages: [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu) (spec with diagram) ·
+> [Taxonomy v2 Handoff](https://claude.ai/artifact/TcFmz4hvhFjzzgTHxkXU9Q) (this document).
 
 ---
 
@@ -62,7 +64,7 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 
 ---
 
-## 2. What is DONE (commits `0fea324`, `472a208`, plus the Power Query fix)
+## 2. What is DONE (commits `0fea324`, `472a208`, `2f68cf7`, `3ace7cb`, `00d262a`, `1e28a66`)
 
 | Area | File(s) | Notes |
 |---|---|---|
@@ -274,7 +276,7 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
 ### Task 3: Reports show the hierarchy
 Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 16 columns A–P), the enriched M scripts (`internal/powerquery/script.go`: `GenerateParquetMScript` and `GenerateEnrichedCsvMScript`, `Columns=16`) and `ExportFinOpsToXLSX` (raw) show none of the hierarchy ids.
 - Raw: add `CSP` and `Resource ID` to the raw Excel export.
-- Enriched: append these columns after `Action Recommended`: Project, App, Cost Center, Owner, Customer Function, CSP, Region, Service Category, Service Usage, Usage, Resource Group, Resource. Update the `AutoFilter` range, the column widths and the M-script column list/count to match `enrichedColumnSelect` order. **The CSV that DuckDB exports has every enriched column (41)**, so the CSV M script must say `Columns=41` and list all of them in that order.
+- Enriched: append these columns after `Action Recommended`: Project, App, Cost Center, Owner, Customer Function, CSP, Region, Service Category, Service Usage, Usage, Resource Group, Resource (plus Product Line after Task 0). Update the `AutoFilter` range, the column widths and the M-script column list/count to match `enrichedColumnSelect` order. **The CSV that DuckDB exports has every enriched column (41)**, so the CSV M script must say `Columns=41` and list all of them in that order.
 - Update `excel_test.go` and `script_test.go`.
 
 ### Task 4: Docs
