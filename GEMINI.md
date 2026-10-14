@@ -46,7 +46,8 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 
 ### 5. Cost Taxonomy & Multi-Tenancy
 > **Authoritative spec: `docs/taxonomy-spec.md`.** The summary below describes the current code; the
-> spec adds OwnerTeam, ProductLine, Code naming and shared catalogs (handoff Task 0).
+> spec adds OwnerTeam, ProductLine, LZ/Connection and Code naming, and **OpenLZ is now single-tenant**:
+> the Tenant level and all `--tenant` support are being removed (handoff Task 0). Don't add new tenant code.
 
 - **Hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
   - Biz: `BusinessUnit → CostCenter → Owner → CustomerFunc`

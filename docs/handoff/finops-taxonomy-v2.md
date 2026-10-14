@@ -45,7 +45,7 @@ Relations
 - Region   (id unique within its CSP) can be mapped to CSP
 - Account   can be mapped to Environment
 - Resource  can be mapped to Environment       (added 2026-10-14; wins over the Account's Environment)
-- App ↔ Environment is MANY-TO-MANY             (added 2026-10-14; tenants have apps with several
+- App ↔ Environment is MANY-TO-MANY             (added 2026-10-14; there are apps with several
                                                   environments AND environments hosting several apps)
 - Service   can be mapped to ServiceCat
 - Resource  can be mapped to ResourceGroup
@@ -57,8 +57,8 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 ### Decisions already made with the user
 | Topic | Decision |
 |---|---|
-| Source of truth | **Directus.** `openlz taxonomy pull` exports one JSON snapshot per tenant. Enrich reads only the JSON (offline, reproducible). `push` exists only to seed Directus from JSON. |
-| Tenancy in Directus | **One Directus instance.** A `tenants` collection, and every taxonomy collection has a `tenant` M2O field. The tenant code `default` ↔ `taxonomy/taxonomy.json`; any other code ↔ `taxonomy/taxonomy_<code>.json`. |
+| Source of truth | **Directus.** `openlz taxonomy pull` exports the taxonomy to `taxonomy/taxonomy.json`. Enrich reads only the JSON (offline, reproducible). `push` exists only to seed Directus from JSON. |
+| Tenancy | **Single tenant (2026-10-14).** OpenLZ supports one tenant: no Tenant level, no `tenant` field in Directus, one taxonomy file, and the existing `--tenant` support is removed (Task 0 item 3). |
 | Depth | Model all 7 project levels **and** add resource-level sensing now (done, see §2). |
 | App CostCenter in a different BU than App's Project | **Warning only.** `Catalog.Warnings()` and `openlz taxonomy validate` print it; loading still succeeds. |
 
@@ -71,8 +71,8 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 | API cache restored | `internal/cache/cache.go` | The `.gitignore` rule `cache/` used to hide this package; it is now `/cache/`. |
 | Taxonomy schema + snapshot JSON | `internal/taxonomy/schema.go` | `Schema`, `RefSpec{Field,Target,Kind}`, `Kind` = `parent` / `must` (required) or `can` (optional). `Snapshot` = `{Tenant, Collections map[string][]Row}`, `Row` = `map[string]string`. Regions use `ScopeRef: "csp"` (id is unique within its CSP). |
 | Catalog build + Resolve | `internal/taxonomy/taxonomy.go` | `Build` collects **all** errors (`errors.Join`). A reference matches a target **id**, or a **unique** name. Duplicate names are allowed but never matched by name. `Resolve(Input) Output` fills 16 slots. |
-| Paths | `internal/taxonomy/paths.go` | `PathForTenant`, `ResolvePath`, `LoadOptional(path, tenant)`, `DiscoverTenants`, `TenantCode`. |
-| Sample data | `taxonomy/taxonomy.json`, `taxonomy/taxonomy_tenant_a.json` | Built around the mock account ids `111122223333`, `444455556666`, `777788889999`. |
+| Paths | `internal/taxonomy/paths.go` | `PathForTenant`, `ResolvePath`, `LoadOptional(path, tenant)`, `DiscoverTenants`, `TenantCode`. Tenant-related; removed in Task 0 item 3. |
+| Sample data | `taxonomy/taxonomy.json` (and `taxonomy/taxonomy_tenant_a.json`, deleted in Task 0 item 3) | Built around the mock account ids `111122223333`, `444455556666`, `777788889999`. |
 | Raw FinOps schema | `internal/duckdb/engine.go` | 19 columns; adds `csp` and `resource_id` (after `currency` and `usage_type`). Upsert upgrades older 17-column files through `columnOr`. |
 | Analyze | `engine.AnalyzeFinOps` | Groups by and carries `primary_tag, secondary_tag, csp, region, usage_type, resource_id`. `resource_or_key` = `resource_id` if set, else `service`. |
 | Enriched schema | `engine.insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` | Adds 13 columns: `csp_id, csp, region_id, region, service_id, service_usage_id, service_usage, usage_id, usage, resource_group_id, resource_group, resource_id, resource`. Columns missing from older files read back as `''`. |
@@ -105,7 +105,6 @@ The loop is generic over `Schema` and repeats until nothing changes:
 ### Snapshot file format (example)
 ```json
 {
-  "tenant": "default",
   "business_units": [{"id": "BU-DIGITAL", "name": "Digital"}],
   "cost_centers":   [{"id": "CC-PAY", "name": "Payments", "business_unit": "BU-DIGITAL"}],
   "apps":           [{"id": "APP-GATEWAY", "name": "Payment Gateway", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"}],
@@ -129,7 +128,7 @@ rm -rf data
 /tmp/openlz finops analyze
 /tmp/openlz finops enrich          # expect: "Enriched 2 records with cost taxonomy"
 /tmp/openlz taxonomy validate      # expect: PASSED (0 warnings)
-/tmp/openlz taxonomy validate --tenant tenant_a
+/tmp/openlz taxonomy validate --tenant tenant_a   # until Task 0 item 3 removes tenants
 rm -rf data                        # data/ is gitignored, but keep the tree clean
 ```
 
@@ -147,35 +146,33 @@ The code implements everything in §2 above. The spec adds the following; each i
    - New enriched columns `product_line_id`, `product_line`. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column count in this doc (41 → 43).
    - Bottom-up gains CustomerFunc → ProductLine → OwnerTeam and ProductLine → App. This lets a resource in a shared Environment reach its App; add a test for that.
    - Add a warning in `Build`: ProductLine.app.cost_center ≠ ProductLine.owner_team.cost_center (spec §3.3).
-3. **Shared catalogs** (spec §4): CSP, Region, ServiceCat, Service are shared by all tenants. ServiceUsage and Usage stay **per tenant** (user decision 2026-10-14); a tenant's `service_usages.service` refs a shared Service.
-   - Add `Shared bool` to `CollectionSpec` and set it on those four collections. (`Catalog` stays as is; ServiceUsage, Usage, ResourceGroup and Resource are catalog but **not** shared.)
-   - Snapshot files: shared collections live in **`taxonomy/catalog.json`** (no tenant). Tenant files keep only tenant-owned collections. `taxonomy.Load(path)` becomes `LoadTenant(tenantPath, catalogPath)`, which merges both, then `Build`. Reject a shared collection inside a tenant file, and a tenant collection inside `catalog.json`.
-   - `LoadOptional`: the catalog path defaults to `taxonomy/catalog.json` next to the tenant file. A missing catalog is fine (catalog levels just don't resolve).
-   - Enrich: `EnrichCostCentersInput` gains `CatalogPath` (JSON `catalogPath`, CLI `--catalog`).
-   - Directus (Task 1): shared collections have **no** `tenant` field. Pull/push them with `--catalog` (one file), separately from tenant pulls.
-   - Move the `csps`, `regions`, `service_cats` and `services` rows out of `taxonomy/taxonomy.json` and `taxonomy/taxonomy_tenant_a.json` into `taxonomy/catalog.json`, merging duplicates (tenant_a's are a subset of default's). `service_usages` and `usages` stay in the tenant files.
+3. **Remove multi-tenancy** (user decision 2026-10-14: OpenLZ supports a single tenant). This replaces the earlier "shared catalog file" plan: there is one `taxonomy/taxonomy.json` holding every level, CSP/Region and ServiceCat/Service included.
+   - `internal/taxonomy`: drop `Snapshot.Tenant` and the `"tenant"` JSON key (ignore it on read for one release). In `paths.go`, remove `PathForTenant`, `DiscoverTenants` and `TenantCode`, and make `ResolvePath(explicit)` / `LoadOptional(path)` default to `taxonomy/taxonomy.json`. Delete `taxonomy/taxonomy_tenant_a.json` and the tests that use it or tenant paths.
+   - CLI: remove the `--tenant` flag everywhere: `cmd/root.go` (`rootTenant`), `finops.go`, `secops.go`, `cloudops.go`, `pipeline.go`, `stages.go`, `cmd/openlz-*/main.go`. Remove `openlz taxonomy list` (one file, nothing to list) and `--tenant` on `validate`/`init`. `init` writes `taxonomy/taxonomy.json` if it doesn't exist.
+   - Stages: remove the `Tenant` field (JSON `tenant`) from every stage input in `internal/stages/{finops,secops,cloudops}`, and delete `types.AppendTenantToPath`. Default data paths stay `data/<domain>_<stage>.parquet`. Old Lambda payloads that still send `"tenant"` keep working, because unknown JSON keys are ignored.
+   - `grep -rni tenant --include=*.go .` must return nothing when done (except the one-release `"tenant"` read in snapshot JSON).
 4. **Code naming** (spec §1): the business key is called **Code**. In the snapshot JSON, rename the row key `"id"` → `"code"` and keep reading `"id"` as an alias for one release. Rename `Row.ID()` → `Row.Code()`. Keep the internal Go `Slot.ID` and the enriched `*_id` columns: they are output column names and must not change. Resources keep the key `"code"` too; its value is the cloud resource id.
 5. **Docs:** update the hierarchy and relation lists in `GEMINI.md` §2.5 to point at the spec.
 6. **New level LZ / Connection** between App and Environment/Account (spec §2–§4). ⚠ Its relations are marked *(proposed)* in the spec; **confirm them with the user before coding this item.** Once confirmed:
-   - Collections `landing_zones` and `connections` (tenant-owned). Refs: `connections.landing_zone` (can → `landing_zones`), `connections.csp` (must → shared `csps`), `accounts.connection` (can → `connections`), `environments.landing_zone` (can → `landing_zones`).
+   - Collections `landing_zones` and `connections`. Refs: `connections.landing_zone` (can → `landing_zones`), `connections.csp` (must → `csps`), `accounts.connection` (can → `connections`), `environments.landing_zone` (can → `landing_zones`).
    - `connections` needs a **non-ref attribute** `currency` (ISO 4217, required). `Schema` only knows id/name/refs today, so add `Attrs []AttrSpec{Field, Required}` to `CollectionSpec`. Validate attributes in `Build`, and carry them through snapshot JSON and the Directus bootstrap (string field).
    - Raw FinOps gains `connection_id`: the payer account id in payer mode, empty otherwise. Thread it through `CostRecord`, `insertFinOpsRecords` (19 → 20 columns), the upsert partition, Analyze pass-through and `AnalyzedCostRow`, and the raw M scripts.
    - `Input.ConnectionID`; `Output.LZ`, `Output.Connection`; enriched columns `lz_id, lz, connection_id, connection, billing_currency` (43 → 48 after item 2).
    - Bottom-up: Account → Connection → LZ, Environment → LZ. Top-down: LZ → Connection, LZ → Environment (LZ and Connection are organizational, not catalog).
    - Warnings: an Account's Connection in a different LZ than its Environment. A cost row whose `currency` ≠ its Connection's currency is reported by Enrich (log a warning with counts, keep the row).
 
-Acceptance: all tests pass. `openlz taxonomy validate` and `validate --tenant tenant_a` pass with 0 warnings. The mock smoke test in §3 shows `product_line_id` filled for resource rows whose ResourceGroup has a CustomerFunc.
+Acceptance: all tests pass. `openlz taxonomy validate` passes with 0 warnings. No `--tenant` flag remains. The mock smoke test in §3 shows `product_line_id` filled for resource rows whose ResourceGroup has a CustomerFunc.
 
 ### Task 1: Directus integration (`internal/directus` + CLI)  ★ main task
 
-**Goal:** `openlz taxonomy directus bootstrap`, `openlz taxonomy pull --tenant X` and `openlz taxonomy push --tenant X`.
+**Goal:** `openlz taxonomy directus bootstrap`, `openlz taxonomy pull` and `openlz taxonomy push` (single tenant: one Directus instance ↔ `taxonomy/taxonomy.json`).
 
 #### 1a. Package layout
 ```
 internal/directus/
   client.go      // HTTP client: base URL, auth, JSON helpers, error mapping
   schema.go      // Bootstrap(ctx): create collections/fields/relations from taxonomy.Schema
-  sync.go        // Pull(ctx, tenant) (*taxonomy.Snapshot, error); Push(ctx, snap) (PushReport, error)
+  sync.go        // Pull(ctx) (*taxonomy.Snapshot, error); Push(ctx, snap) (PushReport, error)
   client_test.go // httptest.Server fake Directus; no Docker needed
 ```
 Use only the standard library (`net/http`, `encoding/json`). Add no new modules.
@@ -190,21 +187,20 @@ Use only the standard library (`net/http`, `encoding/json`). Add no new modules.
 Send `Authorization: Bearer <token>` on every request. Never log the token or the password.
 
 #### 1c. Directus data model (built from `taxonomy.Schema`)
-- Collection **`tenants`**: PK `code` (string, entered by hand), plus `name` (string).
+- No tenant collection or field (single tenant).
 - Every taxonomy collection `C` in `Schema`:
-  - `uid`: integer, PK, auto-increment, hidden, read-only. **The business id is not the PK**, because the same id (e.g. `SC-COMPUTE`) can exist in several tenants.
-  - `tenant`: string, M2O → `tenants.code`, required.
+  - `uid`: integer, PK, auto-increment, hidden, read-only. **The business code is not the PK**: codes can then be renamed in Directus without breaking links, and regions are only unique within their CSP.
   - `code`: string, required. This is the JSON `id`.
   - `name`: string, required.
   - for each `RefSpec r`: field `r.Field`, type integer, M2O → `r.Target.uid`. Set `meta.required = r.Required()`. Display template `{{code}} - {{name}}`.
   - `meta.note`: the collection's `Label`, plus the relation text from the `Schema` doc comment.
-- **Junction collections** (`spec.Junction`, currently `app_environments`) are Directus M2M junction tables. They get `uid` (PK), `tenant`, and the two integer M2O fields from `spec.Refs` (`environment` → `environments.uid`, `app` → `apps.uid`), but **no** `code`/`name`. For the editing UI, also create the M2M alias fields:
+- **Junction collections** (`spec.Junction`, currently `app_environments`) are Directus M2M junction tables. They get `uid` (PK) and the two integer M2O fields from `spec.Refs` (`environment` → `environments.uid`, `app` → `apps.uid`), but **no** `code`/`name`. For the editing UI, also create the M2M alias fields:
   - on `apps`: field `environments`, `type: "alias"`, `meta.special: ["m2m"]`, `meta.interface: "list-m2m"`;
   - on `environments`: field `apps` (same settings);
   - set the relation meta so Directus knows the pairing: `POST /relations {"collection":"app_environments","field":"environment","related_collection":"environments","meta":{"one_field":"apps","junction_field":"app"},"schema":{"on_delete":"CASCADE"}}` and the mirror for `app` with `"one_field":"environments","junction_field":"environment"`.
 
   Pull/push treat junction rows as plain rows keyed by the `(environment code, app code)` pair. Skip the alias fields on pull. On push, upsert by pair (insert missing pairs, never delete).
-- Uniqueness of `(tenant, code)` (regions: `(tenant, csp, code)`) is **not** enforced by Directus. `taxonomy.Build` enforces it after pull. Don't try to add composite unique constraints through the API.
+- Uniqueness of `code` per collection (regions: `(csp, code)`) is **not** enforced by Directus. `taxonomy.Build` enforces it after pull. Don't try to add composite unique constraints through the API.
 
 REST calls (Directus 10/11):
 ```
@@ -226,24 +222,23 @@ POST /relations                   {"collection":C,"field":"business_unit","relat
 Create collections in `Schema` order. Targets always come earlier in the list, so relations can be created right after each collection's fields. Bootstrap must be **idempotent**: running it twice is a no-op with exit code 0.
 
 #### 1d. Pull (Directus → JSON)
-1. For each collection: `GET /items/{C}?filter[tenant][_eq]=<code>&limit=-1&fields=uid,code,name,<ref fields>`.
-2. Build a `uid → code` map per collection. Turn each item into a `taxonomy.Row` with `id=code`, `name`, and each ref = the target code. A ref uid that isn't in the same tenant is an error that names the row.
+1. For each collection: `GET /items/{C}?limit=-1&fields=uid,code,name,<ref fields>`.
+2. Build a `uid → code` map per collection. Turn each item into a `taxonomy.Row` with `id=code`, `name`, and each ref = the target code. A ref uid that doesn't resolve is an error that names the row.
 3. Run `taxonomy.Build(snap)`. If it fails, print the joined errors and **do not write the file** unless `--force` is given. Print the warnings.
-4. Write the snapshot with `taxonomy.WriteSnapshot(taxonomy.PathForTenant(dir, tenant), snap)`.
+4. Write the snapshot with `taxonomy.WriteSnapshot(path, snap)` (default `taxonomy/taxonomy.json`, `--file` to override).
 5. Pulling the same data twice must produce a byte-identical file. Sort rows by `id` inside each collection before writing.
 
 #### 1e. Push (JSON → Directus, seed / upsert)
 1. Read the snapshot and run `taxonomy.Build` (refuse invalid input).
-2. If the tenant doesn't exist, create it (`POST /items/tenants {"code":..,"name":..}`).
-3. In `Schema` order, load the existing items for the tenant and index them by `code` (regions by `csp|code`). For each row: translate ref codes → uids using the maps filled earlier, then `PATCH /items/{C}/{uid}` if the row exists, or `POST /items/{C}` if not. Read the new uid from `data.uid`.
-4. **Never delete** rows in Directus. Report rows that exist in Directus but not in the JSON as "extra" in the summary.
-5. Support `--dry-run` (print the plan, send no writes).
+2. In `Schema` order, load the existing items and index them by `code` (regions by `csp|code`). For each row: translate ref codes → uids using the maps filled earlier, then `PATCH /items/{C}/{uid}` if the row exists, or `POST /items/{C}` if not. Read the new uid from `data.uid`.
+3. **Never delete** rows in Directus. Report rows that exist in Directus but not in the JSON as "extra" in the summary.
+4. Support `--dry-run` (print the plan, send no writes).
 
 #### 1f. CLI wiring (`cmd/taxonomy.go`)
 ```
 openlz taxonomy directus bootstrap
-openlz taxonomy pull  [--tenant X] [--dir taxonomy] [--force]
-openlz taxonomy push  [--tenant X] [--dir taxonomy] [--dry-run]
+openlz taxonomy pull  [--file taxonomy/taxonomy.json] [--force]
+openlz taxonomy push  [--file taxonomy/taxonomy.json] [--dry-run]
 ```
 Add the same commands to the standalone `cmd/openlz-finops/main.go` only if that binary already has a `taxonomy` command (it doesn't today, so skip it).
 
@@ -260,20 +255,19 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
 
 #### 1g. Tests and acceptance
 - Unit tests with `httptest.Server` that records requests:
-  - bootstrap creates one collection per `Schema` entry plus `tenants`, the right fields and relations (including the `app_environments` M2M meta);
+  - bootstrap creates one collection per `Schema` entry, the right fields and relations (including the `app_environments` M2M meta);
   - a second bootstrap sends no POSTs;
-  - pull maps uids → codes and filters by tenant;
-  - push creates the tenant, inserts in dependency order and PATCHes existing rows;
+  - pull maps uids → codes;
+  - push inserts in dependency order and PATCHes existing rows;
   - a push → pull round trip returns the same snapshot.
 - Manual end-to-end check (Docker is available in the Claude cloud container):
   ```bash
   docker compose -f directus/docker-compose.yml up -d    # wait for http://localhost:8055/server/health
   export OPENLZ_DIRECTUS_TOKEN=openlz-dev-admin-token
   /tmp/openlz taxonomy directus bootstrap && /tmp/openlz taxonomy directus bootstrap   # 2nd = no-op
-  /tmp/openlz taxonomy push --tenant default
-  /tmp/openlz taxonomy push --tenant tenant_a
+  /tmp/openlz taxonomy push
   cp taxonomy/taxonomy.json /tmp/before.json
-  /tmp/openlz taxonomy pull --tenant default
+  /tmp/openlz taxonomy pull
   diff <(jq -S . /tmp/before.json) <(jq -S . taxonomy/taxonomy.json)   # only row order may differ
   ```
 
@@ -287,17 +281,18 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - Update `excel_test.go` and `script_test.go`.
 
 ### Task 4: Docs
-- `ARCHITECTURE.md`: rewrite §4D (the hierarchy and relations in §1 of this file, plus the two-way Resolve rules in §2) and §5 (raw schema 19 columns, enriched additions). Rewrite §11.2–11.4 for one snapshot per tenant, the Directus data model and the pull/push commands. Add the new `--group-by` modes to §4A / §8.
+- `ARCHITECTURE.md`: rewrite §4D (the hierarchy and relations in §1 of this file, plus the two-way Resolve rules in §2) and §5 (raw schema 19 columns, enriched additions). Replace §11 (multi-tenancy) with the single taxonomy file, the Directus data model and the pull/push commands; drop the `--tenant` flag from §8. Add the new `--group-by` modes to §4A / §8.
 - `directus/README.md`: replace the "Must Behave" table with the relations, and add bootstrap → push → edit → pull.
 - `README.md`: one short "Cost taxonomy" section that links to ARCHITECTURE.
 - `GEMINI.md` and `CLAUDE.md` already point here. After Task 1, change the "in progress" note to "done".
 
 ## 5. Product decisions (answered 2026-10-14)
-- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds Tenant as root, OwnerTeam (renamed Owner), ProductLine (can ref App), Code naming, and catalogs shared across tenants: **only CSP/Region and ServiceCat/Service are shared**; ServiceUsage/Usage are per tenant (confirmed).
+- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
+- **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
 - **LZ / Connection (2026-10-14):** new level between App and Environment/Account; a Connection bills in exactly one currency. Relations and currency rules are **proposed** in the spec and awaiting confirmation (Task 0 item 6).
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
-- **Q3 – environments vs apps:** tenants have both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
+- **Q3 – environments vs apps:** there are both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
 - **Follow-up (2026-10-14):** add bottom-up Resource → Environment → App → Project → BU. Done (`resources.environment`).
 
 ## 6. Known backlog (out of scope unless asked; listed so you don't "fix" them by accident)

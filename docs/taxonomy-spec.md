@@ -1,14 +1,15 @@
 # Cost Hierarchy Taxonomy — Specification
 
 > Status: **agreed spec** (2026-10-14), plus the **LZ/Connection** level added the same day.
-> Its relations are marked *(proposed)* until confirmed. Implementation status and remaining work:
+> Its relations are marked *(proposed)* until confirmed. **OpenLZ supports a single tenant**, so
+> there is no Tenant level and one taxonomy holds every level. Implementation status and remaining work:
 > `docs/handoff/finops-taxonomy-v2.md`. Shareable page with diagram:
 > [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu).
 
 ## 1. Notation
 
 - **Code / Name.** Every item has a **Code** (stable business key, managed by people) and a **Name**
-  (display text). Codes are unique as described in §6. Names may repeat.
+  (display text). Codes are unique as described in §5. Names may repeat.
 - **Resource ID.** Resources use the cloud provider's own identifier (instance id, ARN) instead of
   a managed Code.
 - **Cost-data codes.** For levels that also appear on cost data, the Code must equal the value
@@ -21,30 +22,28 @@
 
 ## 2. Hierarchies
 
-### Biz Cost Hierarchy (per tenant)
+### Biz Cost Hierarchy
 ```
-+ Tenant
-  + BusinessUnit
-    + CostCenter
-      + OwnerTeam
-        + ProductLine
-          + CustomerFunc
++ BusinessUnit
+  + CostCenter
+    + OwnerTeam
+      + ProductLine
+        + CustomerFunc
 ```
 
 ### Project Cost Hierarchy
 ```
-+ Tenant
-  + Project
-    + App
-      + LZ / Connection                 (per tenant; a Connection bills in one currency)
-        + Environment / Account
-          + CSP / Region                ┐ shared catalog (§5)
-            + ServiceCat / Service      ┘
-              + ServiceUsage / Usage        (per tenant)
-                + ResourceGroup / Resource  (per tenant)
++ Project
+  + App
+    + LZ / Connection            (a Connection bills in one currency)
+      + Environment / Account
+        + CSP / Region
+          + ServiceCat / Service
+            + ServiceUsage / Usage
+              + ResourceGroup / Resource
 ```
 
-- **LZ** is a Landing Zone: a cloud organization that a tenant runs (e.g. an AWS Organization).
+- **LZ** is a Landing Zone: a cloud organization the company runs (e.g. an AWS Organization).
 - **Connection** is one billing source inside an LZ: the account or enrollment that receives the
   bill (e.g. an AWS payer/management account). **Each Connection bills in exactly one currency.**
 
@@ -96,34 +95,18 @@ An App's LZs are not stored. They are derived from its Environments (App ↔ Env
   Connections with different currencies must convert to one reporting currency first, or show
   each currency separately.
 
-## 5. Tenancy and shared catalogs
-
-| Scope | Levels |
-|---|---|
-| **Per tenant** | BusinessUnit, CostCenter, OwnerTeam, ProductLine, CustomerFunc, Project, App, LZ, Connection, Environment, Account, ServiceUsage, Usage, ResourceGroup, Resource |
-| **Shared by all tenants** | CSP, Region, ServiceCat, Service |
-
-- Shared catalogs describe the cloud provider, not an organization. They are maintained once and
-  every tenant uses them.
-- ServiceUsage/Usage are per tenant: each tenant groups usage types its own way, and a tenant's
-  ServiceUsage may map to a shared Service.
-- Matching never crosses tenants. Only shared catalogs are visible to every tenant.
-- A tenant-owned item may reference a shared catalog item; a shared item never references a
-  tenant-owned item.
-
-## 6. Uniqueness
+## 5. Uniqueness
 
 | Level | Unique within |
 |---|---|
-| Tenant-owned levels | tenant + level |
-| Region | CSP |
-| Other shared catalog levels | level (global) |
-| Resource ID | tenant |
-| App ↔ Environment link | tenant (the pair appears once) |
+| Every level except Region | its level (one Code per item) |
+| Region | its CSP (the same Region Code may exist under two CSPs) |
+| Resource ID | all Resources |
+| App ↔ Environment link | each pair appears once |
 
-Names may repeat. A repeated name only matches when another known level narrows it down (§7, rule 5).
+Names may repeat. A repeated name only matches when another known level narrows it down (§6, rule 5).
 
-## 7. Matching / Mapping
+## 6. Matching / Mapping
 
 Each cost row is matched in both directions, repeated until nothing changes.
 
