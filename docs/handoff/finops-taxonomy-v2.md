@@ -289,7 +289,7 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
 4. Keep the old resolver behind a flag until the output matches on the mock pipeline.
 5. Blocked on the 3-hierarchy redesign (Biz / Project / Cloud) being agreed in `docs/taxonomy-spec.md`: the resolver assumes Environment is under App and a Project path of 5 levels.
 
-Open policy choices baked into the resolver (confirm with the user): the deepest valid tag wins over upper tags (flagged `tag-corrected`); LZ is used only when nothing else is known; unresolved levels become `-UNSPEC` at every level, not only Feature/Function.
+Policy choices baked into the resolver (confirmed by the user 2026-10-14): the deepest valid tag (Environment, Feature or Function) wins over upper tags, and a corrected upper tag is flagged `tag-corrected`; LZ is used as evidence, as a last resort when nothing more specific is known; unresolved levels become `-UNSPEC` at every level, not only Feature/Function.
 
 PostgreSQL: the same query can back a Directus audit view. Run `attribution.SQL()` output with `psql -f` after creating the tables from `attribution.Schema`; it uses `AS MATERIALIZED`, so it needs PostgreSQL 12+.
 
@@ -313,6 +313,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
 - **Region / Zone (2026-10-14):** Region becomes the pair Region/Zone; Zone can be mapped to Region (Task 0 item 7).
 - **CSP and LZ / Connection (2026-10-14):** each LZ has exactly one CSP, so **CSP is an attribute of the LZ** (and of Region), not a level; Region stays below Account. Account maps to its billing Connection; Environment is under an LZ; **one billing currency per LZ** (Task 0 item 6).
+- **Attribution policy (2026-10-14):** the deepest tag (Env/Feature/Function) wins; LZ is used (last resort); every unresolved level becomes UNSPEC. Implemented in `internal/attribution`.
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
 - **Q3 – environments vs apps:** there are both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
