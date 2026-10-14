@@ -24,7 +24,7 @@ data/
 *.out
 
 # Local cache and scratch
-cache/
+/cache/
 scratch/
 
 ref/
