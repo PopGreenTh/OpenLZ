@@ -33,16 +33,22 @@
 ```
 
 ### Project Cost Hierarchy
+Environment/Account is where two parents meet: the **App side** and the **LZ side**.
+
 ```
-+ Project
-  + App
-    + LZ / Connection            (LZ attributes: CSP, billing currency)
-      + Environment / Account
-        + Region / Zone              (Region attribute: CSP)
-          + ServiceCat / Service
-            + ServiceUsage / Usage
-              + ResourceGroup / Resource
++ Project                     + LZ / Connection      (LZ attributes: CSP, billing currency)
+  + App ─────────┐                 │
+    many-to-many │                 │ is under (required)
+                 + Environment / Account ─────────────┘
+                   + Region / Zone                    (Region attribute: CSP)
+                     + ServiceCat / Service
+                       + ServiceUsage / Usage
+                         + ResourceGroup / Resource
 ```
+
+An LZ is **not** under an App. An LZ hosts many Projects and Apps, and an App can run in several
+LZs. Both work through Environments: an Environment belongs to exactly one LZ and can host several
+Apps, and an App can have Environments in several LZs. See §3.2 and the example in §6.
 
 - **LZ** is a Landing Zone: a cloud organization the company runs (e.g. an AWS Organization). Each LZ
   has exactly one **CSP** and one **billing currency**, both stored as attributes of the LZ (§3.3).
@@ -82,7 +88,9 @@ Relation types:
 | Resource | can be mapped | ResourceGroup | |
 | Resource | can be mapped | Environment | Overrides the Account's Environment |
 
-An App's LZs (and so its CSPs) are not stored. They come from its Environments (App ↔ Environment → LZ).
+There is no direct App ↔ LZ or Project ↔ LZ link. An App's LZs (and so its CSPs) come from its
+Environments (App ↔ Environment → LZ), and a Project's LZs come from its Apps. An App that runs in
+an LZ therefore needs at least one Environment in that LZ.
 
 ### 3.3 Attributes
 Attributes are plain values on an item, not links to another level.
@@ -119,7 +127,7 @@ Attributes are plain values on an item, not links to another level.
 | Resource ID | all Resources |
 | App ↔ Environment link | each pair appears once |
 
-Names may repeat. A repeated name only matches when another known level narrows it down (§6, rule 5).
+Names may repeat. A repeated name only matches when another known level narrows it down (§6, rule 6).
 
 ## 6. Matching / Mapping
 
@@ -143,15 +151,19 @@ Each cost row is matched in both directions, repeated until nothing changes.
 
    A level is filled only when exactly one candidate remains after intersecting what every known
    level allows. Example: a shared Environment's Apps ∩ the Project's Apps.
-4. **Ambiguity:** if several candidates remain but all share the same parent, the parent is
+4. **LZ and App together:** a Connection or Account identifies the LZ, and a tag identifies the
+   App. The row's Environment is then the Environments of that App ∩ the Environments of that LZ.
+   Example: App `APP-GATEWAY` has `ENV-PAY-PROD` in `LZ-MAIN` and `ENV-PAY-DR` in `LZ-DR`; a row billed
+   through a `LZ-DR` Connection and tagged `APP-GATEWAY` resolves to `ENV-PAY-DR`.
+5. **Ambiguity:** if several candidates remain but all share the same parent, the parent is
    filled and the level itself stays empty. Example: a shared Environment whose Apps are all in
    one Project still yields the Project and BusinessUnit.
-5. **Repeated names** (e.g. "Production") are matched within an already-known parent. Codes always
+6. **Repeated names** (e.g. "Production") are matched within an already-known parent. Codes always
    match directly.
-6. **Never inferred top-down:** Region/Zone, ServiceCat/Service, ServiceUsage/Usage and
+7. **Never inferred top-down:** Region/Zone, ServiceCat/Service, ServiceUsage/Usage and
    ResourceGroup/Resource. These come only from the cost row itself. A value the row already
    carries (e.g. an unknown Account or Connection) is never replaced.
-7. **Priority:** a tag that matches the taxonomy beats a derived value. A tag that matches
+8. **Priority:** a tag that matches the taxonomy beats a derived value. A tag that matches
    nothing does not block derivation; it is kept only if nothing else fills that level.
-8. **Conflicts are not flagged** during matching (e.g. an OwnerTeam under a different CostCenter
+9. **Conflicts are not flagged** during matching (e.g. an OwnerTeam under a different CostCenter
    than the App's). The checks in §3.4 report taxonomy-level problems at validation time.
