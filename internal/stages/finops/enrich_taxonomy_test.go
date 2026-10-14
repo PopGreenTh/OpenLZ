@@ -69,9 +69,9 @@ func TestEnrichMapsCostRowsOntoTaxonomy(t *testing.T) {
 	checks := map[string][2]string{
 		"project":           {ec2.ProjectID, "PRJ-PAYMENTS"},
 		"business_unit":     {ec2.BusinessUnitID, "BU-DIGITAL"},
-		"application":       {ec2.ApplicationID, "APP-GATEWAY"},
+		"application":       {ec2.ApplicationID, ""}, // ENV-PAY-PROD hosts two apps
 		"cost_center":       {ec2.CostCenterID, "CC-PAY"},
-		"environment":       {ec2.EnvironmentID, "ENV-GW-PROD"},
+		"environment":       {ec2.EnvironmentID, "ENV-PAY-PROD"},
 		"owner":             {ec2.OwnerID, "OWN-PAY"},
 		"customer_function": {ec2.CustomerFunctionID, "CF-CHECKOUT"},
 		"csp":               {ec2.CSPID, "AWS"},

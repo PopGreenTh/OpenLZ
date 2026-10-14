@@ -39,6 +39,9 @@ Relations
 - ResourceGroup CAN  ref  CustomerFunc
 - Region   (id unique within its CSP) can be mapped to CSP
 - Account   can be mapped to Environment
+- Resource  can be mapped to Environment       (added 2026-10-14; wins over the Account's Environment)
+- App ↔ Environment is MANY-TO-MANY             (added 2026-10-14; tenants have apps with several
+                                                  environments AND environments hosting several apps)
 - Service   can be mapped to ServiceCat
 - Resource  can be mapped to ResourceGroup
 - Usage     can be mapped to ServiceUsage      (implied by the pair pattern)
@@ -75,17 +78,23 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 | Power Query | `internal/powerquery/script.go` | Raw FinOps M scripts now declare 19 columns. |
 
 ### How `Resolve` matches in two directions (decided with the user, see `taxonomy.go`)
-The loop is generic over `Schema` refs and repeats until nothing changes:
+The loop is generic over `Schema` and repeats until nothing changes:
 1. **Evidence.** Tags that match the taxonomy (by id or unique name), plus the row's own account, CSP, region (looked up within its CSP), service, usage type (exact, then without an AWS region prefix such as `APS1-`) and resource id.
-2. **Bottom-up.** Every resolved node fills its parents, most specific level first:
+2. **Bottom-up.** Every resolved node fills its single-ref parents, most specific level first:
    - Resource → ResourceGroup → CustomerFunc → Owner → CostCenter → BU
-   - Account → Environment → App → Project → BU, and App → CostCenter
+   - **Resource → Environment** → App → Project → BU (the resource's environment wins over its account's)
+   - Account → Environment
+   - App → CostCenter
    - Usage → ServiceUsage → Service → ServiceCat; Region → CSP
 
-   Because the most specific level is processed first, BU comes from Project before CostCenter, and CostCenter comes from App before Owner.
-3. **Top-down.** A resolved node fills an empty child level only when it has **exactly one** child there (BU → Project → App → Environment → Account, BU → CostCenter → Owner → CustomerFunc). This never touches **catalog** levels (`CollectionSpec.Catalog`: CSP, Region, ServiceCat, Service, ServiceUsage, Usage, ResourceGroup, Resource), and never fills a level the row already has its own value for (for example, an unknown account id is never replaced).
+   An Environment fills its App only when it is linked to exactly one App (`app_environments`). Because the most specific level is processed first, BU comes from Project before CostCenter, and CostCenter comes from App before Owner.
+3. **Narrowing** (`resolver.narrow`). For an empty organizational level, every resolved node offers candidates: a parent offers its children (top-down: BU → Project → App → Environment → Account; BU → CostCenter → Owner → CustomerFunc), and a child offers its many-to-many parents (a shared Environment offers its Apps). The offers are intersected:
+   - **One candidate left:** fill the level. For example, a shared environment's apps ∩ a Project tag's apps leaves one App.
+   - **Several left, but all share a parent:** fill that parent, so bottom-up continues through the ambiguous level. For example, both Apps of a shared Environment are in PRJ-PAYMENTS and CC-PAY.
+
+   This never touches **catalog** levels (`CollectionSpec.Catalog`: CSP, Region, ServiceCat, Service, ServiceUsage, Usage, ResourceGroup, Resource), and never fills a level the row already has its own value for (for example, an unknown account id is never replaced).
 4. **Priority.** A filled slot is never overwritten, so a tag that matches the taxonomy beats a derived value. A tag that matches nothing **does not block** derivation; it is output only if the slot stays empty.
-5. **Scoped names.** A tag that is ambiguous by name (e.g. `Environment=Production`) is matched again among the children of an already-resolved parent (the App), where it is unique.
+5. **Scoped names.** A tag that is ambiguous by name (e.g. `Environment=Production`) is matched again among the children of any resolved node (e.g. the App's environments), where it may be unique.
 6. **Conflicts are not flagged.** For example, a resource's Owner can sit under a different CostCenter than the App's (product decision).
 
 ### Snapshot file format (example)
@@ -95,9 +104,13 @@ The loop is generic over `Schema` refs and repeats until nothing changes:
   "business_units": [{"id": "BU-DIGITAL", "name": "Digital"}],
   "cost_centers":   [{"id": "CC-PAY", "name": "Payments", "business_unit": "BU-DIGITAL"}],
   "apps":           [{"id": "APP-GATEWAY", "name": "Payment Gateway", "project": "PRJ-PAYMENTS", "cost_center": "CC-PAY"}],
+  "environments":   [{"id": "ENV-PAY-PROD", "name": "Production"}],
+  "app_environments": [{"environment": "ENV-PAY-PROD", "app": "APP-GATEWAY"},
+                       {"environment": "ENV-PAY-PROD", "app": "APP-ORDERS"}],
   "regions":        [{"id": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"}]
 }
 ```
+`app_environments` is a **junction** collection (`CollectionSpec.Junction`). Its rows have no `id`/`name`, `Refs[0]` is the child side (environment) and `Refs[1]` the parent side (app), and duplicate pairs are an error. An Environment with no linked App is a warning.
 The top-level keys are exactly the `Schema` collection names. Reference values are target **ids**; a unique name is also accepted on read.
 
 ---
@@ -151,6 +164,12 @@ Send `Authorization: Bearer <token>` on every request. Never log the token or th
   - `name`: string, required.
   - for each `RefSpec r`: field `r.Field`, type integer, M2O → `r.Target.uid`. Set `meta.required = r.Required()`. Display template `{{code}} - {{name}}`.
   - `meta.note`: the collection's `Label`, plus the relation text from the `Schema` doc comment.
+- **Junction collections** (`spec.Junction`, currently `app_environments`) are Directus M2M junction tables. They get `uid` (PK), `tenant`, and the two integer M2O fields from `spec.Refs` (`environment` → `environments.uid`, `app` → `apps.uid`), but **no** `code`/`name`. For the editing UI, also create the M2M alias fields:
+  - on `apps`: field `environments`, `type: "alias"`, `meta.special: ["m2m"]`, `meta.interface: "list-m2m"`;
+  - on `environments`: field `apps` (same settings);
+  - set the relation meta so Directus knows the pairing: `POST /relations {"collection":"app_environments","field":"environment","related_collection":"environments","meta":{"one_field":"apps","junction_field":"app"},"schema":{"on_delete":"CASCADE"}}` and the mirror for `app` with `"one_field":"environments","junction_field":"environment"`.
+
+  Pull/push treat junction rows as plain rows keyed by the `(environment code, app code)` pair. Skip the alias fields on pull. On push, upsert by pair (insert missing pairs, never delete).
 - Uniqueness of `(tenant, code)` (regions: `(tenant, csp, code)`) is **not** enforced by Directus. `taxonomy.Build` enforces it after pull. Don't try to add composite unique constraints through the API.
 
 REST calls (Directus 10/11):
@@ -207,7 +226,7 @@ taxonomy:push:      { cmds: ["./{{.BINARY}} taxonomy push {{.CLI_ARGS}}"] }
 
 #### 1g. Tests and acceptance
 - Unit tests with `httptest.Server` that records requests:
-  - bootstrap creates N collections, the right fields and the right relations;
+  - bootstrap creates one collection per `Schema` entry plus `tenants`, the right fields and relations (including the `app_environments` M2M meta);
   - a second bootstrap sends no POSTs;
   - pull maps uids → codes and filters by tenant;
   - push creates the tenant, inserts in dependency order and PATCHes existing rows;
@@ -242,7 +261,8 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 ## 5. Product decisions (answered 2026-10-14)
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
-- **Q3 – repeated environment names:** environments belong to an App, so a name like "Production" is unique only within its App. Implemented: an ambiguous name is matched within an already-resolved parent; ids always match directly.
+- **Q3 – environments vs apps:** tenants have both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.
+- **Follow-up (2026-10-14):** add bottom-up Resource → Environment → App → Project → BU. Done (`resources.environment`).
 
 ## 6. Known backlog (out of scope unless asked; listed so you don't "fix" them by accident)
 - Analyze compares raw `amount` (not `daily_amount`) and mixes metrics and frequencies in the master parquet. The default 1-day window makes max = avg.

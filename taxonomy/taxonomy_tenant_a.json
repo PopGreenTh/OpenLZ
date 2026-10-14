@@ -24,9 +24,14 @@
     {"id": "APP-DISPATCH", "name": "Dispatch API", "project": "PRJ-FLEET", "cost_center": "CC-LOGISTICS"}
   ],
   "environments": [
-    {"id": "ENV-WEB-PROD", "name": "Retail Production", "app": "APP-WEB"},
-    {"id": "ENV-WEB-DEV", "name": "Retail Development", "app": "APP-WEB"},
-    {"id": "ENV-FLEET-PROD", "name": "Fleet Production", "app": "APP-DISPATCH"}
+    {"id": "ENV-WEB-PROD", "name": "Retail Production"},
+    {"id": "ENV-WEB-DEV", "name": "Retail Development"},
+    {"id": "ENV-FLEET-PROD", "name": "Fleet Production"}
+  ],
+  "app_environments": [
+    {"environment": "ENV-WEB-PROD", "app": "APP-WEB"},
+    {"environment": "ENV-WEB-DEV", "app": "APP-WEB"},
+    {"environment": "ENV-FLEET-PROD", "app": "APP-DISPATCH"}
   ],
   "accounts": [
     {"id": "111122223333", "name": "lz-retail-prod", "environment": "ENV-WEB-PROD"},

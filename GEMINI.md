@@ -48,7 +48,9 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - **Hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
   - Biz: `BusinessUnit → CostCenter → Owner → CustomerFunc`
   - Project: `Project → App → Environment/Account → CSP/Region → ServiceCat/Service → ServiceUsage/Usage → ResourceGroup/Resource`
-- **Relations**: Project *must ref* BusinessUnit; App *must ref* CostCenter; ResourceGroup *can ref* CustomerFunc; Region (unique within its CSP), Account, Service, Usage and Resource *can be mapped* to their group level.
+- **Relations**: Project *must ref* BusinessUnit; App *must ref* CostCenter; ResourceGroup *can ref* CustomerFunc; Region (unique within its CSP), Account, Service, Usage and Resource *can be mapped* to their group level; Resource *can be mapped* to Environment.
+- **App ↔ Environment is many-to-many** (junction collection `app_environments`): an App can run in several Environments and an Environment can host several Apps.
+- **Matching is two-way** (`Catalog.Resolve`): bottom-up from the row's resource/account, and top-down plus candidate intersection from known levels. See the handoff doc §2 for the exact rules.
 - The old "must behave" identity rules (Project = BU, App = Owner, Env = CostCenter) are **removed**. Do not reintroduce them.
 - One flat JSON snapshot per tenant: `taxonomy/taxonomy.json` (tenant `default`) and `taxonomy/taxonomy_<tenant>.json`. Data files keep the suffix pattern `data/finops_raw_<tenant>.parquet`.
 - **Directus is the editing source of truth** (one instance, a `tenant` field on every row); `openlz taxonomy pull` writes the JSON that Enrich reads offline.

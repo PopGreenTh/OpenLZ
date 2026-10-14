@@ -30,13 +30,19 @@
     {"id": "APP-LAKE", "name": "Data Lakehouse", "project": "PRJ-LAKEHOUSE", "cost_center": "CC-DATA"}
   ],
   "environments": [
-    {"id": "ENV-GW-PROD", "name": "Production", "app": "APP-GATEWAY"},
-    {"id": "ENV-GW-STG", "name": "Staging", "app": "APP-GATEWAY"},
-    {"id": "ENV-LAKE-PROD", "name": "Production", "app": "APP-LAKE"}
+    {"id": "ENV-PAY-PROD", "name": "Production"},
+    {"id": "ENV-PAY-STG", "name": "Staging"},
+    {"id": "ENV-LAKE-PROD", "name": "Production"}
+  ],
+  "app_environments": [
+    {"environment": "ENV-PAY-PROD", "app": "APP-GATEWAY"},
+    {"environment": "ENV-PAY-STG", "app": "APP-GATEWAY"},
+    {"environment": "ENV-PAY-PROD", "app": "APP-ORDERS"},
+    {"environment": "ENV-LAKE-PROD", "app": "APP-LAKE"}
   ],
   "accounts": [
-    {"id": "111122223333", "name": "lz-prod-payments", "environment": "ENV-GW-PROD"},
-    {"id": "444455556666", "name": "lz-stg-payments", "environment": "ENV-GW-STG"},
+    {"id": "111122223333", "name": "lz-prod-payments", "environment": "ENV-PAY-PROD"},
+    {"id": "444455556666", "name": "lz-stg-payments", "environment": "ENV-PAY-STG"},
     {"id": "777788889999", "name": "lz-prod-data", "environment": "ENV-LAKE-PROD"}
   ],
   "csps": [
@@ -83,9 +89,10 @@
     {"id": "RG-LAKE", "name": "Lakehouse Storage", "customer_func": "CF-LAKE"}
   ],
   "resources": [
-    {"id": "i-0111122223333a001", "name": "checkout-node-1", "resource_group": "RG-CHECKOUT"},
-    {"id": "i-0444455556666a001", "name": "checkout-staging-node-1", "resource_group": "RG-CHECKOUT"},
-    {"id": "arn:aws:lambda:ap-southeast-1:111122223333:function:order-processor", "name": "order-processor", "resource_group": "RG-ORDERS"},
-    {"id": "arn:aws:s3:::lz-777788889999-datalake", "name": "datalake bucket", "resource_group": "RG-LAKE"}
+    {"id": "i-0111122223333a001", "name": "checkout-node-1", "resource_group": "RG-CHECKOUT", "environment": "ENV-PAY-PROD"},
+    {"id": "i-0444455556666a001", "name": "checkout-staging-node-1", "resource_group": "RG-CHECKOUT", "environment": "ENV-PAY-STG"},
+    {"id": "arn:aws:lambda:ap-southeast-1:111122223333:function:order-processor", "name": "order-processor", "resource_group": "RG-ORDERS", "environment": "ENV-PAY-PROD"},
+    {"id": "arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "name": "inventory-db-staging", "environment": "ENV-PAY-STG"},
+    {"id": "arn:aws:s3:::lz-777788889999-datalake", "name": "datalake bucket", "resource_group": "RG-LAKE", "environment": "ENV-LAKE-PROD"}
   ]
 }

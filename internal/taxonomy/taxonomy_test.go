@@ -40,19 +40,19 @@ func TestSampleTaxonomiesLoadWithoutWarnings(t *testing.T) {
 
 func TestResolveFullHierarchyFromResource(t *testing.T) {
 	out := sampleCatalog(t).Resolve(Input{
-		AccountID:  "111122223333",
+		AccountID:  "444455556666",
 		CSP:        "AWS",
 		Region:     "ap-southeast-1",
 		Service:    "Amazon Elastic Compute Cloud - Compute",
 		UsageType:  "APS1-BoxUsage:t3.medium",
-		ResourceID: "i-0111122223333a001",
+		ResourceID: "i-0444455556666a001",
 		Project:    "Untagged",
 		App:        "Untagged",
 	})
 
 	want := map[string]Slot{
-		"Account":          {ID: "111122223333", Name: "lz-prod-payments"},
-		"Environment":      {ID: "ENV-GW-PROD", Name: "Production"},
+		"Account":          {ID: "444455556666", Name: "lz-stg-payments"},
+		"Environment":      {ID: "ENV-PAY-STG", Name: "Staging"},
 		"App":              {ID: "APP-GATEWAY", Name: "Payment Gateway"},
 		"Project":          {ID: "PRJ-PAYMENTS", Name: "Payments Platform"},
 		"BusinessUnit":     {ID: "BU-DIGITAL", Name: "Digital"},
@@ -66,7 +66,7 @@ func TestResolveFullHierarchyFromResource(t *testing.T) {
 		"ServiceUsage":     {ID: "SU-EC2-INSTANCE", Name: "EC2 Instance Hours"},
 		"Usage":            {ID: "BoxUsage:t3.medium", Name: "t3.medium instance hours"},
 		"ResourceGroup":    {ID: "RG-CHECKOUT", Name: "Checkout Compute"},
-		"Resource":         {ID: "i-0111122223333a001", Name: "checkout-node-1"},
+		"Resource":         {ID: "i-0444455556666a001", Name: "checkout-staging-node-1"},
 	}
 	got := map[string]Slot{
 		"Account": out.Account, "Environment": out.Environment, "App": out.App, "Project": out.Project,
@@ -96,14 +96,111 @@ func TestResolveWithoutResourcePicksOnlyOwner(t *testing.T) {
 	}
 }
 
-func TestResolveAmbiguousOwnerStaysEmpty(t *testing.T) {
-	// CC-PAY has one owner, but OWN-PAY has two customer functions.
+func TestSharedEnvironmentResolvesCommonParents(t *testing.T) {
+	// ENV-PAY-PROD hosts APP-GATEWAY and APP-ORDERS: the App is ambiguous, but both Apps are
+	// in PRJ-PAYMENTS and CC-PAY, so bottom-up continues through the ambiguous level.
 	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333"})
-	if out.Owner.ID != "OWN-PAY" {
-		t.Fatalf("owner: %+v", out.Owner)
+	if out.Environment.ID != "ENV-PAY-PROD" {
+		t.Fatalf("environment: %+v", out.Environment)
 	}
-	if out.CustomerFunction != (Slot{}) {
-		t.Fatalf("customer function must stay empty when ambiguous, got %+v", out.CustomerFunction)
+	if out.App != (Slot{}) {
+		t.Fatalf("app must stay empty when the environment hosts several apps: %+v", out.App)
+	}
+	if out.Project.ID != "PRJ-PAYMENTS" || out.CostCenter.ID != "CC-PAY" || out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("common parents: project=%+v cc=%+v bu=%+v", out.Project, out.CostCenter, out.BusinessUnit)
+	}
+	// CC-PAY has one owner, but OWN-PAY has two customer functions.
+	if out.Owner.ID != "OWN-PAY" || out.CustomerFunction != (Slot{}) {
+		t.Fatalf("owner/function: %+v %+v", out.Owner, out.CustomerFunction)
+	}
+}
+
+func TestResourceEnvironmentWinsOverAccount(t *testing.T) {
+	// A staging database living in the prod account.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333", ResourceID: "arn:aws:rds:ap-southeast-1:111122223333:db:inventory"})
+	if out.Environment.ID != "ENV-PAY-STG" {
+		t.Fatalf("resource environment must win: %+v", out.Environment)
+	}
+	// ENV-PAY-STG hosts only APP-GATEWAY.
+	if out.App.ID != "APP-GATEWAY" || out.Project.ID != "PRJ-PAYMENTS" || out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("resource → environment → app → project → bu: %+v %+v %+v", out.App, out.Project, out.BusinessUnit)
+	}
+	if out.Account.ID != "111122223333" {
+		t.Fatalf("account still reported: %+v", out.Account)
+	}
+}
+
+func TestAppWithManyEnvironmentsAndEnvironmentWithManyApps(t *testing.T) {
+	cat, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU", "name": "BU"}],
+	  "cost_centers": [{"id": "CC", "name": "CC", "business_unit": "BU"}],
+	  "projects": [
+	    {"id": "P1", "name": "Project One", "business_unit": "BU"},
+	    {"id": "P2", "name": "Project Two", "business_unit": "BU"}
+	  ],
+	  "apps": [
+	    {"id": "A1", "name": "App One", "project": "P1", "cost_center": "CC"},
+	    {"id": "A2", "name": "App Two", "project": "P2", "cost_center": "CC"}
+	  ],
+	  "environments": [{"id": "SHARED", "name": "Shared Prod"}, {"id": "A1-DEV", "name": "App One Dev"}],
+	  "app_environments": [
+	    {"environment": "SHARED", "app": "A1"},
+	    {"environment": "SHARED", "app": "A2"},
+	    {"environment": "A1-DEV", "app": "A1"}
+	  ],
+	  "accounts": [{"id": "1", "name": "shared", "environment": "SHARED"}, {"id": "2", "name": "dev", "environment": "A1-DEV"}]
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Shared environment + project tag: the intersection leaves one app.
+	if out := cat.Resolve(Input{AccountID: "1", Project: "P2"}); out.App.ID != "A2" {
+		t.Fatalf("shared env ∩ project apps should give A2: %+v", out.App)
+	}
+	// Shared environment alone: apps are in different projects, so only the common CC resolves.
+	out := cat.Resolve(Input{AccountID: "1"})
+	if out.App != (Slot{}) || out.Project != (Slot{}) || out.CostCenter.ID != "CC" || out.BusinessUnit.ID != "BU" {
+		t.Fatalf("shared env alone: app=%+v project=%+v cc=%+v bu=%+v", out.App, out.Project, out.CostCenter, out.BusinessUnit)
+	}
+	// App with two environments: the account picks the environment, the environment the app.
+	if out := cat.Resolve(Input{AccountID: "2"}); out.App.ID != "A1" || out.Project.ID != "P1" {
+		t.Fatalf("dev account: %+v %+v", out.App, out.Project)
+	}
+	// App tag only: two environments, so environment stays empty.
+	if out := cat.Resolve(Input{App: "A1"}); out.Environment != (Slot{}) {
+		t.Fatalf("app with two environments must not pick one: %+v", out.Environment)
+	}
+}
+
+func TestJunctionValidation(t *testing.T) {
+	_, err := buildJSON(t, `{
+	  "business_units": [{"id": "BU", "name": "BU"}],
+	  "cost_centers": [{"id": "CC", "name": "CC", "business_unit": "BU"}],
+	  "projects": [{"id": "P", "name": "P", "business_unit": "BU"}],
+	  "apps": [{"id": "A", "name": "A", "project": "P", "cost_center": "CC"}],
+	  "environments": [{"id": "E", "name": "E"}],
+	  "app_environments": [
+	    {"environment": "E", "app": "A"},
+	    {"environment": "E", "app": "A"},
+	    {"environment": "E", "app": "NOPE"},
+	    {"app": "A"}
+	  ]
+	}`)
+	if err == nil {
+		t.Fatal("expected junction errors")
+	}
+	for _, want := range []string{"duplicate link", `app "NOPE" does not match`, "app_environments[3]: environment is required"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
+	}
+
+	cat, err := buildJSON(t, `{"environments": [{"id": "E", "name": "E"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Warnings()) != 1 || !strings.Contains(cat.Warnings()[0], "not linked to any App") {
+		t.Fatalf("expected unlinked environment warning, got %v", cat.Warnings())
 	}
 }
 
@@ -143,7 +240,7 @@ func TestMatchedTagWinsOverAccount(t *testing.T) {
 	if out.App.ID != "APP-ORDERS" {
 		t.Fatalf("matched tag must win: %+v", out.App)
 	}
-	if out.Environment.ID != "ENV-GW-PROD" || out.Project.ID != "PRJ-PAYMENTS" {
+	if out.Environment.ID != "ENV-PAY-PROD" || out.Project.ID != "PRJ-PAYMENTS" {
 		t.Fatalf("other levels still derive: env=%+v project=%+v", out.Environment, out.Project)
 	}
 }
@@ -194,11 +291,11 @@ func TestTopDownNeverReplacesRowAccount(t *testing.T) {
 func TestAmbiguousEnvironmentNameMatchesWithinApp(t *testing.T) {
 	// "Production" exists under APP-GATEWAY and APP-LAKE; the App tag scopes it.
 	out := sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Production"})
-	if out.Environment.ID != "ENV-GW-PROD" {
+	if out.Environment.ID != "ENV-PAY-PROD" {
 		t.Fatalf("environment name should match within its app: %+v", out.Environment)
 	}
 	out = sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Staging"})
-	if out.Environment.ID != "ENV-GW-STG" {
+	if out.Environment.ID != "ENV-PAY-STG" {
 		t.Fatalf("staging: %+v", out.Environment)
 	}
 }

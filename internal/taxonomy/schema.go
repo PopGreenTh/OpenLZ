@@ -12,22 +12,23 @@ import (
 
 // Collection names. They are shared by the JSON snapshot and the Directus collections.
 const (
-	BusinessUnits  = "business_units"
-	CostCenters    = "cost_centers"
-	Owners         = "owners"
-	CustomerFuncs  = "customer_funcs"
-	Projects       = "projects"
-	Apps           = "apps"
-	Environments   = "environments"
-	Accounts       = "accounts"
-	CSPs           = "csps"
-	Regions        = "regions"
-	ServiceCats    = "service_cats"
-	Services       = "services"
-	ServiceUsages  = "service_usages"
-	Usages         = "usages"
-	ResourceGroups = "resource_groups"
-	Resources      = "resources"
+	BusinessUnits   = "business_units"
+	CostCenters     = "cost_centers"
+	Owners          = "owners"
+	CustomerFuncs   = "customer_funcs"
+	Projects        = "projects"
+	Apps            = "apps"
+	Environments    = "environments"
+	AppEnvironments = "app_environments"
+	Accounts        = "accounts"
+	CSPs            = "csps"
+	Regions         = "regions"
+	ServiceCats     = "service_cats"
+	Services        = "services"
+	ServiceUsages   = "service_usages"
+	Usages          = "usages"
+	ResourceGroups  = "resource_groups"
+	Resources       = "resources"
 )
 
 // Ref kinds describe what a reference field means in the cost hierarchy.
@@ -61,6 +62,9 @@ type CollectionSpec struct {
 	// Catalog levels describe the cost row itself (where, what, which resource). They are
 	// only filled from the row's own data, never top-down from an organizational parent.
 	Catalog bool
+	// Junction collections link two levels many-to-many. Their rows have no id or name;
+	// Refs[0] is the child side and Refs[1] the parent side (e.g. environment ↔ app).
+	Junction bool
 }
 
 // Schema lists every collection in dependency order: a collection only references
@@ -76,7 +80,10 @@ type CollectionSpec struct {
 //	App           must ref CostCenter
 //	ResourceGroup can ref CustomerFunc
 //	Region        can be mapped to CSP (region id is unique within its CSP)
+//	App           ↔ Environment is many-to-many (app_environments): an App can run in
+//	              several Environments and an Environment can host several Apps
 //	Account       can be mapped to Environment
+//	Resource      can be mapped to Environment (wins over its Account's Environment)
 //	Service       can be mapped to ServiceCat
 //	Usage         can be mapped to ServiceUsage
 //	Resource      can be mapped to ResourceGroup
@@ -96,8 +103,12 @@ var Schema = []CollectionSpec{
 			{Field: "project", Target: Projects, Kind: RefParent},
 			{Field: "cost_center", Target: CostCenters, Kind: RefMust},
 		}},
-	{Name: Environments, Label: "Environment", Hierarchy: "project",
-		Refs: []RefSpec{{Field: "app", Target: Apps, Kind: RefParent}}},
+	{Name: Environments, Label: "Environment", Hierarchy: "project"},
+	{Name: AppEnvironments, Label: "App Environment", Hierarchy: "project", Junction: true,
+		Refs: []RefSpec{
+			{Field: "environment", Target: Environments, Kind: RefMust},
+			{Field: "app", Target: Apps, Kind: RefMust},
+		}},
 	{Name: Accounts, Label: "Account", Hierarchy: "project",
 		Refs: []RefSpec{{Field: "environment", Target: Environments, Kind: RefCan}}},
 	{Name: CSPs, Label: "CSP", Hierarchy: "project", Catalog: true},
@@ -113,7 +124,10 @@ var Schema = []CollectionSpec{
 	{Name: ResourceGroups, Label: "Resource Group", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "customer_func", Target: CustomerFuncs, Kind: RefCan}}},
 	{Name: Resources, Label: "Resource", Hierarchy: "project", Catalog: true,
-		Refs: []RefSpec{{Field: "resource_group", Target: ResourceGroups, Kind: RefCan}}},
+		Refs: []RefSpec{
+			{Field: "resource_group", Target: ResourceGroups, Kind: RefCan},
+			{Field: "environment", Target: Environments, Kind: RefCan},
+		}},
 }
 
 // Spec returns the collection spec by name.
@@ -212,6 +226,9 @@ func (s *Snapshot) MarshalJSON() ([]byte, error) {
 			}
 			buf.WriteString("\n    {")
 			keys := []string{"id", "name"}
+			if spec.Junction {
+				keys = nil
+			}
 			for _, ref := range spec.Refs {
 				keys = append(keys, ref.Field)
 			}
@@ -225,7 +242,7 @@ func (s *Snapshot) MarshalJSON() ([]byte, error) {
 			first := true
 			for _, k := range append(keys, extra...) {
 				v, ok := row[k]
-				if !ok || (v == "" && k != "id" && k != "name") {
+				if !ok || (v == "" && (spec.Junction || (k != "id" && k != "name"))) {
 					continue
 				}
 				if !first {

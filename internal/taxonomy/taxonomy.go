@@ -67,6 +67,7 @@ type node struct {
 	id, name string
 	scope    string
 	refs     map[string]*node
+	multi    map[string][]*node // many-to-many parents, keyed by parent collection
 	children map[string][]*node // keyed by child collection
 }
 
@@ -132,6 +133,10 @@ func Build(snap *Snapshot) (*Catalog, error) {
 	for _, spec := range Schema {
 		c.byID[spec.Name] = map[string][]*node{}
 		c.byName[spec.Name] = map[string][]*node{}
+		if spec.Junction {
+			errs = append(errs, c.link(spec, snap.Rows(spec.Name))...)
+			continue
+		}
 		for i, row := range snap.Rows(spec.Name) {
 			where := fmt.Sprintf("%s[%d]", spec.Name, i)
 			if row.ID() == "" || row.Name() == "" {
@@ -139,7 +144,7 @@ func Build(snap *Snapshot) (*Catalog, error) {
 				continue
 			}
 			where = fmt.Sprintf("%s %q", spec.Label, row.ID())
-			n := &node{coll: spec.Name, id: row.ID(), name: row.Name(), refs: map[string]*node{}, children: map[string][]*node{}}
+			n := &node{coll: spec.Name, id: row.ID(), name: row.Name(), refs: map[string]*node{}, multi: map[string][]*node{}, children: map[string][]*node{}}
 
 			for _, ref := range spec.Refs {
 				raw := strings.TrimSpace(row[ref.Field])
@@ -181,6 +186,14 @@ func Build(snap *Snapshot) (*Catalog, error) {
 		return nil, errors.Join(errs...)
 	}
 
+	for _, envs := range c.byID[Environments] {
+		for _, env := range envs {
+			if len(env.multi[Apps]) == 0 {
+				c.warnings = append(c.warnings, fmt.Sprintf("Environment %q is not linked to any App (%s)", env.id, AppEnvironments))
+			}
+		}
+	}
+
 	// An App's cost center should roll up to the same business unit as its project.
 	for _, apps := range c.byID[Apps] {
 		for _, app := range apps {
@@ -194,6 +207,43 @@ func Build(snap *Snapshot) (*Catalog, error) {
 		}
 	}
 	return c, nil
+}
+
+// link reads a junction collection: each row joins a child (Refs[0]) to a parent (Refs[1]).
+func (c *Catalog) link(spec CollectionSpec, rows []Row) []error {
+	var errs []error
+	childRef, parentRef := spec.Refs[0], spec.Refs[1]
+	seen := map[[2]*node]bool{}
+	for i, row := range rows {
+		where := fmt.Sprintf("%s[%d]", spec.Name, i)
+		ends := make([]*node, 2)
+		ok := true
+		for k, ref := range []RefSpec{childRef, parentRef} {
+			raw := strings.TrimSpace(row[ref.Field])
+			if raw == "" {
+				errs = append(errs, fmt.Errorf("%s: %s is required", where, ref.Field))
+				ok = false
+				continue
+			}
+			if ends[k] = c.lookup(ref.Target, raw); ends[k] == nil {
+				errs = append(errs, fmt.Errorf("%s: %s %q does not match a %s id or unique name", where, ref.Field, raw, specLabel(ref.Target)))
+				ok = false
+			}
+		}
+		if !ok {
+			continue
+		}
+		child, parent := ends[0], ends[1]
+		if seen[[2]*node{child, parent}] {
+			errs = append(errs, fmt.Errorf("%s: duplicate link %s %q ↔ %s %q", where, childRef.Field, child.id, parentRef.Field, parent.id))
+			continue
+		}
+		seen[[2]*node{child, parent}] = true
+		child.multi[parent.coll] = append(child.multi[parent.coll], parent)
+		parent.children[child.coll] = append(parent.children[child.coll], child)
+		c.counts[spec.Name]++
+	}
+	return errs
 }
 
 func specLabel(coll string) string {
@@ -279,11 +329,16 @@ func clean(s string) string {
 //
 //   - Evidence: tag values that match the taxonomy, plus the row's own account, CSP, region,
 //     service, usage type and resource id.
-//   - Bottom-up: every resolved node fills its parents (Resource → ResourceGroup → CustomerFunc
-//     → Owner → CostCenter → BusinessUnit; Account → Environment → App → Project → BusinessUnit).
-//   - Top-down: a resolved node fills an empty child level when it has exactly one child there
-//     (BusinessUnit → Project → App → Environment → Account). Catalog levels and levels the row
-//     already carries a value for are never filled top-down.
+//   - Bottom-up: every resolved node fills its parents, most specific first (Resource →
+//     ResourceGroup → CustomerFunc → Owner → CostCenter → BusinessUnit; Resource → Environment;
+//     Account → Environment → App → Project → BusinessUnit). An Environment fills its App only
+//     when it is linked to exactly one.
+//   - Narrowing: an empty organizational level is filled when every resolved neighbor's
+//     candidates intersect to exactly one node — a parent's children (top-down, BusinessUnit →
+//     Project → App → Environment → Account) and a child's many-to-many parents (an Environment
+//     shared by several Apps). When several candidates remain but all share a parent (both
+//     Apps of a shared Environment are in one Project), that parent is filled. Catalog levels
+//     and levels the row already carries a value for are never filled this way.
 //
 // A slot is never overwritten once filled, so tags that match the taxonomy win over derived
 // values. A tag that matches nothing does not block derivation; it is kept only when the slot
@@ -339,7 +394,7 @@ func (c *Catalog) Resolve(in Input) Output {
 		if r.matchPendingInScope() {
 			changed = true
 		}
-		if !changed && !r.down(given) {
+		if !changed && !r.narrow(given) {
 			break
 		}
 	}
@@ -408,29 +463,89 @@ func (r *resolver) up() bool {
 					changed, filled = true, true
 				}
 			}
+			for _, parents := range n.multi {
+				if len(parents) == 1 && r.set(parents[0]) {
+					changed, filled = true, true
+				}
+			}
 		}
 	}
 	return filled
 }
 
-// down fills one empty organizational level from a resolved parent with exactly one child
-// there. It returns after the first fill so bottom-up can run again.
-func (r *resolver) down(given map[string]bool) bool {
-	for _, parentSpec := range Schema {
-		parent := r.slots[parentSpec.Name]
-		if parent == nil {
+// narrow fills one empty organizational level from the candidates offered by every resolved
+// node, intersected: a resolved parent offers its children there (top-down) and a resolved
+// child offers its many-to-many parents there (bottom-up, e.g. an Environment shared by
+// several Apps). One candidate fills the level. Several candidates that all share the same
+// parent fill that parent instead, so bottom-up continues through an ambiguous level (a shared
+// Environment whose Apps all belong to one Project still resolves the Project and BU).
+// It returns after the first fill so bottom-up runs again.
+func (r *resolver) narrow(given map[string]bool) bool {
+	for _, target := range Schema {
+		if target.Catalog || target.Junction || given[target.Name] || r.slots[target.Name] != nil {
 			continue
 		}
-		for _, childSpec := range Schema {
-			if childSpec.Catalog || given[childSpec.Name] || r.slots[childSpec.Name] != nil {
-				continue
-			}
-			if r.set(parent.onlyChild(childSpec.Name)) {
-				return true
+		cand := r.candidates(target.Name)
+		if len(cand) == 1 {
+			return r.set(cand[0])
+		}
+		if len(cand) > 1 {
+			for _, ref := range target.Refs {
+				if r.set(commonRef(cand, ref.Field)) {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+// candidates intersects what every resolved node offers for coll, in a stable order.
+// It returns nil when no resolved node constrains coll.
+func (r *resolver) candidates(coll string) []*node {
+	var cand []*node
+	constrained := false
+	for _, spec := range Schema {
+		n := r.slots[spec.Name]
+		if n == nil {
+			continue
+		}
+		offer := n.children[coll]
+		if len(offer) == 0 {
+			offer = n.multi[coll]
+		}
+		if len(offer) == 0 {
+			continue
+		}
+		if !constrained {
+			cand, constrained = append([]*node(nil), offer...), true
+			continue
+		}
+		keep := cand[:0]
+		for _, c := range cand {
+			for _, o := range offer {
+				if c == o {
+					keep = append(keep, c)
+					break
+				}
+			}
+		}
+		cand = keep
+	}
+	return cand
+}
+
+// commonRef returns the node every candidate references through field, or nil.
+func commonRef(cand []*node, field string) *node {
+	var common *node
+	for _, c := range cand {
+		p := c.refs[field]
+		if p == nil || (common != nil && p != common) {
+			return nil
+		}
+		common = p
+	}
+	return common
 }
 
 // matchPendingInScope matches unmatched tag values among the children of resolved parents,
@@ -441,16 +556,15 @@ func (r *resolver) matchPendingInScope() bool {
 		if r.slots[coll] != nil {
 			continue
 		}
-		spec, _ := Spec(coll)
-		for _, ref := range spec.Refs {
-			parent := r.slots[ref.Target]
+		for _, spec := range Schema {
+			parent := r.slots[spec.Name]
 			if parent == nil {
 				continue
 			}
 			var hit *node
 			n := 0
 			for _, child := range parent.children[coll] {
-				if child.refs[ref.Field] == parent && (key(child.id) == key(raw) || key(child.name) == key(raw)) {
+				if key(child.id) == key(raw) || key(child.name) == key(raw) {
 					hit = child
 					n++
 				}
