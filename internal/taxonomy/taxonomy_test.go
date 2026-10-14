@@ -120,13 +120,86 @@ func TestUnmappedAccountDoesNotBorrowHierarchy(t *testing.T) {
 	}
 }
 
-func TestResolveKeepsExplicitTags(t *testing.T) {
-	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333", Project: "Kept Project", App: "Kept App"})
-	if out.Project != (Slot{Name: "Kept Project"}) || out.App != (Slot{Name: "Kept App"}) {
-		t.Fatalf("explicit tags were replaced: %+v %+v", out.Project, out.App)
+func TestUnmatchedTagsDoNotBlockBottomUp(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "777788889999", Project: "CloudMigration", App: "PaymentGateway"})
+	if out.Environment.ID != "ENV-LAKE-PROD" || out.App.ID != "APP-LAKE" || out.Project.ID != "PRJ-LAKEHOUSE" {
+		t.Fatalf("account must still resolve upward: env=%+v app=%+v project=%+v", out.Environment, out.App, out.Project)
 	}
+	if out.BusinessUnit.ID != "BU-DATA" || out.CostCenter.ID != "CC-DATA" {
+		t.Fatalf("bu/cc: %+v %+v", out.BusinessUnit, out.CostCenter)
+	}
+}
+
+func TestUnmatchedTagKeptWhenNothingDerives(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{AccountID: "999900001111", Project: "Kept Project"})
+	if out.Project != (Slot{Name: "Kept Project"}) {
+		t.Fatalf("unmatched tag should be kept when the slot stays empty: %+v", out.Project)
+	}
+}
+
+func TestMatchedTagWinsOverAccount(t *testing.T) {
+	// Account maps to APP-GATEWAY, but the row is tagged with another valid app.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "111122223333", App: "Order Processor"})
+	if out.App.ID != "APP-ORDERS" {
+		t.Fatalf("matched tag must win: %+v", out.App)
+	}
+	if out.Environment.ID != "ENV-GW-PROD" || out.Project.ID != "PRJ-PAYMENTS" {
+		t.Fatalf("other levels still derive: env=%+v project=%+v", out.Environment, out.Project)
+	}
+}
+
+func TestTopDownFillsUniqueChildren(t *testing.T) {
+	out := sampleCatalog(t).Resolve(Input{BusinessUnit: "BU-DATA"})
+	want := map[string]string{
+		"project": "PRJ-LAKEHOUSE", "app": "APP-LAKE", "environment": "ENV-LAKE-PROD",
+		"account": "777788889999", "cost_center": "CC-DATA", "owner": "OWN-DATA", "customer_func": "CF-LAKE",
+	}
+	got := map[string]string{
+		"project": out.Project.ID, "app": out.App.ID, "environment": out.Environment.ID,
+		"account": out.Account.ID, "cost_center": out.CostCenter.ID, "owner": out.Owner.ID, "customer_func": out.CustomerFunction.ID,
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s = %q, want %q", k, got[k], w)
+		}
+	}
+	// Catalog levels are never filled top-down.
+	if out.ServiceCategory != (Slot{}) || out.Region != (Slot{}) || out.ResourceGroup != (Slot{}) {
+		t.Errorf("catalog levels must stay empty: %+v %+v %+v", out.ServiceCategory, out.Region, out.ResourceGroup)
+	}
+}
+
+func TestTopDownStopsAtAmbiguity(t *testing.T) {
+	// PRJ-PAYMENTS has two apps, so nothing below the project can be chosen.
+	out := sampleCatalog(t).Resolve(Input{Project: "PRJ-PAYMENTS"})
+	if out.BusinessUnit.ID != "BU-DIGITAL" {
+		t.Fatalf("bottom-up from project: %+v", out.BusinessUnit)
+	}
+	if out.App != (Slot{}) || out.Environment != (Slot{}) || out.Account != (Slot{}) {
+		t.Fatalf("ambiguous children must stay empty: app=%+v env=%+v acct=%+v", out.App, out.Environment, out.Account)
+	}
+}
+
+func TestTopDownNeverReplacesRowAccount(t *testing.T) {
+	// The row has its own (unknown) account; top-down must not substitute another one.
+	out := sampleCatalog(t).Resolve(Input{AccountID: "999900001111", App: "APP-LAKE"})
+	if out.Account.ID != "999900001111" || out.Account.Name != "" {
+		t.Fatalf("row account must pass through: %+v", out.Account)
+	}
+	if out.Environment.ID != "ENV-LAKE-PROD" {
+		t.Fatalf("environment still derives top-down from the app: %+v", out.Environment)
+	}
+}
+
+func TestAmbiguousEnvironmentNameMatchesWithinApp(t *testing.T) {
+	// "Production" exists under APP-GATEWAY and APP-LAKE; the App tag scopes it.
+	out := sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Production"})
 	if out.Environment.ID != "ENV-GW-PROD" {
-		t.Fatalf("environment should still map from account, got %+v", out.Environment)
+		t.Fatalf("environment name should match within its app: %+v", out.Environment)
+	}
+	out = sampleCatalog(t).Resolve(Input{App: "APP-GATEWAY", Environment: "Staging"})
+	if out.Environment.ID != "ENV-GW-STG" {
+		t.Fatalf("staging: %+v", out.Environment)
 	}
 }
 
@@ -230,7 +303,7 @@ func TestAppCostCenterInOtherBusinessUnitWarns(t *testing.T) {
 
 func TestDuplicateNamesAreAllowedButNotMatched(t *testing.T) {
 	cat := sampleCatalog(t)
-	// Two environments are named "Production".
+	// Two environments are named "Production" and nothing else scopes the tag.
 	if out := cat.Resolve(Input{Environment: "Production"}); out.Environment != (Slot{Name: "Production"}) {
 		t.Fatalf("ambiguous name must not resolve: %+v", out.Environment)
 	}

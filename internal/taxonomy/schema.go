@@ -58,6 +58,9 @@ type CollectionSpec struct {
 	Refs      []RefSpec
 	// ScopeRef names a ref whose value scopes id uniqueness (regions are unique per CSP).
 	ScopeRef string
+	// Catalog levels describe the cost row itself (where, what, which resource). They are
+	// only filled from the row's own data, never top-down from an organizational parent.
+	Catalog bool
 }
 
 // Schema lists every collection in dependency order: a collection only references
@@ -97,19 +100,19 @@ var Schema = []CollectionSpec{
 		Refs: []RefSpec{{Field: "app", Target: Apps, Kind: RefParent}}},
 	{Name: Accounts, Label: "Account", Hierarchy: "project",
 		Refs: []RefSpec{{Field: "environment", Target: Environments, Kind: RefCan}}},
-	{Name: CSPs, Label: "CSP", Hierarchy: "project"},
-	{Name: Regions, Label: "Region", Hierarchy: "project", ScopeRef: "csp",
+	{Name: CSPs, Label: "CSP", Hierarchy: "project", Catalog: true},
+	{Name: Regions, Label: "Region", Hierarchy: "project", Catalog: true, ScopeRef: "csp",
 		Refs: []RefSpec{{Field: "csp", Target: CSPs, Kind: RefCan}}},
-	{Name: ServiceCats, Label: "Service Category", Hierarchy: "project"},
-	{Name: Services, Label: "Service", Hierarchy: "project",
+	{Name: ServiceCats, Label: "Service Category", Hierarchy: "project", Catalog: true},
+	{Name: Services, Label: "Service", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "service_cat", Target: ServiceCats, Kind: RefCan}}},
-	{Name: ServiceUsages, Label: "Service Usage", Hierarchy: "project",
+	{Name: ServiceUsages, Label: "Service Usage", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "service", Target: Services, Kind: RefCan}}},
-	{Name: Usages, Label: "Usage", Hierarchy: "project",
+	{Name: Usages, Label: "Usage", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "service_usage", Target: ServiceUsages, Kind: RefCan}}},
-	{Name: ResourceGroups, Label: "Resource Group", Hierarchy: "project",
+	{Name: ResourceGroups, Label: "Resource Group", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "customer_func", Target: CustomerFuncs, Kind: RefCan}}},
-	{Name: Resources, Label: "Resource", Hierarchy: "project",
+	{Name: Resources, Label: "Resource", Hierarchy: "project", Catalog: true,
 		Refs: []RefSpec{{Field: "resource_group", Target: ResourceGroups, Kind: RefCan}}},
 }
 

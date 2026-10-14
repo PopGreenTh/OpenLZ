@@ -9,7 +9,7 @@ Project rules, architecture invariants and commands are shared with other agents
 FinOps cost taxonomy v2 and the Directus integration are partly built. **Before you touch
 `internal/taxonomy`, `internal/stages/finops`, `internal/directus` or `directus/`, read
 `docs/handoff/finops-taxonomy-v2.md`.** It lists what is done, the ordered remaining tasks with
-acceptance checks, and the open questions to ask the user before coding them.
+acceptance checks, and the product decisions already made.
 
 ## Commands
 

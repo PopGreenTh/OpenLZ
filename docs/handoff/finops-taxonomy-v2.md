@@ -18,7 +18,7 @@
 3. **`internal/taxonomy/schema.go` → `Schema` is the only definition of the taxonomy.** It lists every collection, every reference field, and which references are required. Directus bootstrap, pull, push and validation must all loop over `Schema`. Never hard-code collection or field names a second time.
 4. **Scope.** Do the tasks in §4 in order. Don't refactor unrelated code. Several files are already not `gofmt`-clean (`engine_test.go`, `rest/server.go`, `sense_costanomaly.go`, `stages/types*.go`). Leave them alone unless a task touches them.
 5. **Commits.** Make one commit per task, with a conventional message (`feat(directus): …`). Push to the branch above.
-6. **Ask, don't guess.** The questions in §5 belong to the product owner. Ask them before coding anything that depends on the answer.
+6. **Ask, don't guess.** §5 records the product decisions made so far. For any new behavior question (matching rules, what to flag), ask the user before coding it.
 
 ---
 
@@ -74,14 +74,19 @@ The old model had "must behave" identity rules: Project = BU, App = Owner, Env =
 | CLI | `cmd/finops.go`, `cmd/stages.go`, `cmd/openlz-finops/main.go`, `cmd/taxonomy.go` | `--taxonomy <file>` replaces `--project-taxonomy` and `--business-taxonomy`. `openlz taxonomy list|validate|init` work on the new format. |
 | Power Query | `internal/powerquery/script.go` | Raw FinOps M scripts now declare 19 columns. |
 
-### How `Resolve` fills the hierarchy (read `taxonomy.go` for the details)
-1. Explicit tag values are tried first (`Project`, `App`, `Environment`, …). A tag that doesn't match **is kept as-is** and blocks derivation for that slot (see Q1 in §5).
-2. Account → Environment → App → Project.
-3. CSP and Region. A region is looked up within the row's CSP; without a CSP it must be unique across CSPs.
-4. Usage (exact match, then with the AWS region prefix stripped, e.g. `APS1-`) → ServiceUsage → Service (only if the Service is empty) → ServiceCat.
-5. Resource → ResourceGroup → CustomerFunc → Owner.
-6. CostCenter = App.cost_center, or else Owner.cost_center. BU = Project.business_unit, or else CostCenter.business_unit.
-7. If the Owner is still empty: the CostCenter's only Owner. If the CustomerFunc is still empty: the Owner's only CustomerFunc.
+### How `Resolve` matches in two directions (decided with the user, see `taxonomy.go`)
+The loop is generic over `Schema` refs and repeats until nothing changes:
+1. **Evidence.** Tags that match the taxonomy (by id or unique name), plus the row's own account, CSP, region (looked up within its CSP), service, usage type (exact, then without an AWS region prefix such as `APS1-`) and resource id.
+2. **Bottom-up.** Every resolved node fills its parents, most specific level first:
+   - Resource → ResourceGroup → CustomerFunc → Owner → CostCenter → BU
+   - Account → Environment → App → Project → BU, and App → CostCenter
+   - Usage → ServiceUsage → Service → ServiceCat; Region → CSP
+
+   Because the most specific level is processed first, BU comes from Project before CostCenter, and CostCenter comes from App before Owner.
+3. **Top-down.** A resolved node fills an empty child level only when it has **exactly one** child there (BU → Project → App → Environment → Account, BU → CostCenter → Owner → CustomerFunc). This never touches **catalog** levels (`CollectionSpec.Catalog`: CSP, Region, ServiceCat, Service, ServiceUsage, Usage, ResourceGroup, Resource), and never fills a level the row already has its own value for (for example, an unknown account id is never replaced).
+4. **Priority.** A filled slot is never overwritten, so a tag that matches the taxonomy beats a derived value. A tag that matches nothing **does not block** derivation; it is output only if the slot stays empty.
+5. **Scoped names.** A tag that is ambiguous by name (e.g. `Environment=Production`) is matched again among the children of an already-resolved parent (the App), where it is unique.
+6. **Conflicts are not flagged.** For example, a resource's Owner can sit under a different CostCenter than the App's (product decision).
 
 ### Snapshot file format (example)
 ```json
@@ -229,22 +234,15 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - Update `excel_test.go` and `script_test.go`.
 
 ### Task 4: Docs
-- `ARCHITECTURE.md`: rewrite §4D (the hierarchy and relations in §1 of this file, plus the Resolve order) and §5 (raw schema 19 columns, enriched additions). Rewrite §11.2–11.4 for one snapshot per tenant, the Directus data model and the pull/push commands. Add the new `--group-by` modes to §4A / §8.
+- `ARCHITECTURE.md`: rewrite §4D (the hierarchy and relations in §1 of this file, plus the two-way Resolve rules in §2) and §5 (raw schema 19 columns, enriched additions). Rewrite §11.2–11.4 for one snapshot per tenant, the Directus data model and the pull/push commands. Add the new `--group-by` modes to §4A / §8.
 - `directus/README.md`: replace the "Must Behave" table with the relations, and add bootstrap → push → edit → pull.
 - `README.md`: one short "Cost taxonomy" section that links to ARCHITECTURE.
 - `GEMINI.md` and `CLAUDE.md` already point here. After Task 1, change the "in progress" note to "done".
 
-### Task 5 (only after the product owner answers §5): resolve-rule follow-ups.
-
----
-
-## 5. Open questions for the product owner (ask before coding them)
-- **Q1 – unmatched tags.** Mock rows carry `Project=CloudMigration` and `Application=PaymentGateway`, and neither exists in the taxonomy. Today an unmatched tag is *kept* and **blocks** derivation from the account. For example, account `777788889999` maps to `ENV-LAKE-PROD → APP-LAKE`, yet its rows come out with an empty project/app/cost center. The options are:
-  - (a) keep it as is (tags win);
-  - (b) the account mapping wins, and the unmatched tag is kept in a separate `*_tag` column for review;
-  - (c) tags win only when they match the taxonomy.
-- **Q2 – owner vs cost center conflict.** When a resource's CustomerFunc → Owner belongs to a different CostCenter than the App's, the code keeps both, so Owner doesn't roll up to the row's CostCenter. Should this be flagged?
-- **Q3 – Environment names.** Environments are per App, so names like "Production" repeat and can never be matched by name from a tag. Is matching by id only acceptable?
+## 5. Product decisions (answered 2026-10-14)
+- **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
+- **Q2 – owner vs cost center conflict:** do **not** flag it.
+- **Q3 – repeated environment names:** environments belong to an App, so a name like "Production" is unique only within its App. Implemented: an ambiguous name is matched within an already-resolved parent; ids always match directly.
 
 ## 6. Known backlog (out of scope unless asked; listed so you don't "fix" them by accident)
 - Analyze compares raw `amount` (not `daily_amount`) and mixes metrics and frequencies in the master parquet. The default 1-day window makes max = avg.

@@ -53,7 +53,7 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - One flat JSON snapshot per tenant: `taxonomy/taxonomy.json` (tenant `default`) and `taxonomy/taxonomy_<tenant>.json`. Data files keep the suffix pattern `data/finops_raw_<tenant>.parquet`.
 - **Directus is the editing source of truth** (one instance, a `tenant` field on every row); `openlz taxonomy pull` writes the JSON that Enrich reads offline.
 
-> **Work in progress:** see `docs/handoff/finops-taxonomy-v2.md` for what is done, the remaining tasks (Directus bootstrap/pull/push, reports, docs) and open questions. Read it before you change taxonomy, enrich or Directus code.
+> **Work in progress:** see `docs/handoff/finops-taxonomy-v2.md` for what is done, the remaining tasks (Directus bootstrap/pull/push, reports, docs) and the product decisions. Read it before you change taxonomy, enrich or Directus code.
 
 ---
 

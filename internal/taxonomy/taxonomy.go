@@ -274,127 +274,202 @@ func clean(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// Resolve maps one cost row onto the hierarchies. Tag values already present are kept;
-// empty levels are filled from the taxonomy relations.
+// Resolve maps one cost row onto the hierarchies. Matching runs in two directions until
+// nothing changes:
+//
+//   - Evidence: tag values that match the taxonomy, plus the row's own account, CSP, region,
+//     service, usage type and resource id.
+//   - Bottom-up: every resolved node fills its parents (Resource → ResourceGroup → CustomerFunc
+//     → Owner → CostCenter → BusinessUnit; Account → Environment → App → Project → BusinessUnit).
+//   - Top-down: a resolved node fills an empty child level when it has exactly one child there
+//     (BusinessUnit → Project → App → Environment → Account). Catalog levels and levels the row
+//     already carries a value for are never filled top-down.
+//
+// A slot is never overwritten once filled, so tags that match the taxonomy win over derived
+// values. A tag that matches nothing does not block derivation; it is kept only when the slot
+// stays empty. A tag that is ambiguous by name (e.g. "Production") is matched again among the
+// children of an already-resolved parent.
 func (c *Catalog) Resolve(in Input) Output {
-	// Explicit tags first.
-	project := c.lookup(Projects, in.Project)
-	app := c.lookup(Apps, in.App)
-	env := c.lookup(Environments, in.Environment)
-	cat := c.lookup(ServiceCats, in.ServiceCategory)
-	bu := c.lookup(BusinessUnits, in.BusinessUnit)
-	cc := c.lookup(CostCenters, in.CostCenter)
-	owner := c.lookup(Owners, in.Owner)
-	cf := c.lookup(CustomerFuncs, in.CustomerFunction)
+	r := &resolver{c: c, slots: map[string]*node{}, pending: map[string]string{}}
 
-	// A primary/secondary tag can name a different level than the slot it was sensed in
-	// (e.g. the Project tag holds a business unit). Use it when it is unambiguous.
-	if project == nil && !isEmpty(in.Project) && bu == nil {
-		bu = c.lookup(BusinessUnits, in.Project)
+	tags := []struct{ coll, raw string }{
+		{Projects, in.Project}, {Apps, in.App}, {Environments, in.Environment},
+		{ServiceCats, in.ServiceCategory}, {BusinessUnits, in.BusinessUnit},
+		{CostCenters, in.CostCenter}, {Owners, in.Owner}, {CustomerFuncs, in.CustomerFunction},
 	}
-	if app == nil && !isEmpty(in.App) {
-		if env == nil {
-			env = c.lookup(Environments, in.App)
-		}
-		if cc == nil {
-			cc = c.lookup(CostCenters, in.App)
+	for _, t := range tags {
+		if n := c.lookup(t.coll, t.raw); n != nil {
+			r.set(n)
+		} else if !isEmpty(t.raw) {
+			r.pending[t.coll] = clean(t.raw)
 		}
 	}
+	// The primary/secondary tag can name a different level than the slot it was sensed in.
+	if _, ok := r.pending[Projects]; ok {
+		r.set(c.lookup(BusinessUnits, in.Project))
+	}
+	if _, ok := r.pending[Apps]; ok {
+		r.set(c.lookup(Environments, in.App))
+		r.set(c.lookup(CostCenters, in.App))
+	}
 
-	// Project hierarchy: Account → Environment → App → Project.
 	account := c.lookup(Accounts, in.AccountID)
 	if account == nil {
 		account = c.lookup(Accounts, in.AccountName)
 	}
-	if env == nil && isEmpty(in.Environment) {
-		env = account.ref("environment")
-	}
-	if app == nil && isEmpty(in.App) {
-		app = env.ref("app")
-	}
-	if project == nil && isEmpty(in.Project) {
-		project = app.ref("project")
-	}
-
-	// CSP / Region.
 	csp := c.lookup(CSPs, in.CSP)
-	region := c.lookupRegion(csp, in.Region)
-	if csp == nil {
-		csp = region.ref("csp")
-	}
+	r.set(account)
+	r.set(csp)
+	r.set(c.lookupRegion(csp, in.Region))
+	r.set(c.lookup(Services, in.Service))
+	r.set(c.lookupUsage(in.UsageType))
+	r.set(c.lookup(Resources, in.ResourceID))
 
-	// ServiceCat / Service / ServiceUsage / Usage.
-	usage := c.lookupUsage(in.UsageType)
-	serviceUsage := usage.ref("service_usage")
-	service := c.lookup(Services, in.Service)
-	if service == nil && isEmpty(in.Service) {
-		service = serviceUsage.ref("service")
+	// Levels the row carries its own value for are never filled top-down.
+	given := map[string]bool{
+		Accounts:  !isEmpty(in.AccountID) || !isEmpty(in.AccountName),
+		CSPs:      !isEmpty(in.CSP),
+		Regions:   !isEmpty(in.Region),
+		Services:  !isEmpty(in.Service),
+		Usages:    !isEmpty(in.UsageType),
+		Resources: !isEmpty(in.ResourceID),
 	}
-	if cat == nil && isEmpty(in.ServiceCategory) {
-		cat = service.ref("service_cat")
-	}
-
-	// ResourceGroup / Resource → CustomerFunc → Owner.
-	resource := c.lookup(Resources, in.ResourceID)
-	group := resource.ref("resource_group")
-	if cf == nil && isEmpty(in.CustomerFunction) {
-		cf = group.ref("customer_func")
-	}
-	if owner == nil && isEmpty(in.Owner) {
-		owner = cf.ref("owner")
-	}
-
-	// Business hierarchy: App must ref CostCenter, Project must ref BusinessUnit.
-	if cc == nil && isEmpty(in.CostCenter) {
-		cc = app.ref("cost_center")
-		if cc == nil {
-			cc = owner.ref("cost_center")
+	for {
+		changed := r.up()
+		if r.matchPendingInScope() {
+			changed = true
 		}
-	}
-	if bu == nil && isEmpty(in.BusinessUnit) {
-		bu = project.ref("business_unit")
-		if bu == nil {
-			bu = cc.ref("business_unit")
+		if !changed && !r.down(given) {
+			break
 		}
-	}
-	if owner == nil && isEmpty(in.Owner) {
-		owner = cc.onlyChild(Owners)
-	}
-	if cf == nil && isEmpty(in.CustomerFunction) {
-		cf = owner.onlyChild(CustomerFuncs)
 	}
 
 	out := Output{
-		BusinessUnit:     slotOf(bu, in.BusinessUnit),
-		CostCenter:       slotOf(cc, in.CostCenter),
-		Owner:            slotOf(owner, in.Owner),
-		CustomerFunction: slotOf(cf, in.CustomerFunction),
-		Project:          slotOf(project, in.Project),
-		App:              slotOf(app, in.App),
-		Environment:      slotOf(env, in.Environment),
-		CSP:              slotOf(csp, in.CSP),
-		Region:           slotOf(region, in.Region),
-		ServiceCategory:  slotOf(cat, in.ServiceCategory),
-		ServiceUsage:     serviceUsage.slot(),
-		ResourceGroup:    group.slot(),
+		BusinessUnit:     r.slot(BusinessUnits),
+		CostCenter:       r.slot(CostCenters),
+		Owner:            r.slot(Owners),
+		CustomerFunction: r.slot(CustomerFuncs),
+		Project:          r.slot(Projects),
+		App:              r.slot(Apps),
+		Environment:      r.slot(Environments),
+		ServiceCategory:  r.slot(ServiceCats),
+		ServiceUsage:     r.slot(ServiceUsages),
+		ResourceGroup:    r.slot(ResourceGroups),
+		CSP:              slotOf(r.slots[CSPs], in.CSP),
+		Region:           slotOf(r.slots[Regions], in.Region),
+		Service:          slotOf(r.slots[Services], in.Service),
 	}
-	if account != nil {
-		out.Account = account.slot()
+	if n := r.slots[Accounts]; n != nil {
+		out.Account = n.slot()
 	} else {
 		out.Account = Slot{ID: clean(in.AccountID), Name: clean(in.AccountName)}
 	}
-	out.Service = slotOf(service, in.Service)
-	if usage != nil {
-		out.Usage = usage.slot()
+	if n := r.slots[Usages]; n != nil {
+		out.Usage = n.slot()
 	} else {
 		out.Usage = Slot{ID: clean(in.UsageType)}
 	}
-	if resource != nil {
-		out.Resource = resource.slot()
+	if n := r.slots[Resources]; n != nil {
+		out.Resource = n.slot()
 	} else {
 		out.Resource = Slot{ID: clean(in.ResourceID)}
 	}
 	return out
+}
+
+// resolver holds the resolved node per collection for one cost row.
+type resolver struct {
+	c       *Catalog
+	slots   map[string]*node
+	pending map[string]string // unmatched tag values by collection
+}
+
+// set fills n's collection slot if it is still empty.
+func (r *resolver) set(n *node) bool {
+	if n == nil || r.slots[n.coll] != nil {
+		return false
+	}
+	r.slots[n.coll] = n
+	return true
+}
+
+// up fills parents from resolved nodes, most specific level first, until nothing changes.
+func (r *resolver) up() bool {
+	filled := false
+	for changed := true; changed; {
+		changed = false
+		for i := len(Schema) - 1; i >= 0; i-- {
+			n := r.slots[Schema[i].Name]
+			if n == nil {
+				continue
+			}
+			for _, ref := range Schema[i].Refs {
+				if r.set(n.refs[ref.Field]) {
+					changed, filled = true, true
+				}
+			}
+		}
+	}
+	return filled
+}
+
+// down fills one empty organizational level from a resolved parent with exactly one child
+// there. It returns after the first fill so bottom-up can run again.
+func (r *resolver) down(given map[string]bool) bool {
+	for _, parentSpec := range Schema {
+		parent := r.slots[parentSpec.Name]
+		if parent == nil {
+			continue
+		}
+		for _, childSpec := range Schema {
+			if childSpec.Catalog || given[childSpec.Name] || r.slots[childSpec.Name] != nil {
+				continue
+			}
+			if r.set(parent.onlyChild(childSpec.Name)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchPendingInScope matches unmatched tag values among the children of resolved parents,
+// so a name like "Production" resolves once its App is known.
+func (r *resolver) matchPendingInScope() bool {
+	changed := false
+	for coll, raw := range r.pending {
+		if r.slots[coll] != nil {
+			continue
+		}
+		spec, _ := Spec(coll)
+		for _, ref := range spec.Refs {
+			parent := r.slots[ref.Target]
+			if parent == nil {
+				continue
+			}
+			var hit *node
+			n := 0
+			for _, child := range parent.children[coll] {
+				if child.refs[ref.Field] == parent && (key(child.id) == key(raw) || key(child.name) == key(raw)) {
+					hit = child
+					n++
+				}
+			}
+			if n == 1 && r.set(hit) {
+				changed = true
+				break
+			}
+		}
+	}
+	return changed
+}
+
+// slot returns the resolved slot, or the unmatched tag value as a name.
+func (r *resolver) slot(coll string) Slot {
+	if n := r.slots[coll]; n != nil {
+		return n.slot()
+	}
+	return Slot{Name: r.pending[coll]}
 }
 
 // slotOf returns the node's slot, or the raw sensed value as a name when unmatched.
