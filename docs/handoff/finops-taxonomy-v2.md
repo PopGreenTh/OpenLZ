@@ -160,6 +160,12 @@ The code implements everything in §2 above. The spec adds the following; each i
    - Raw FinOps gains `connection_id`: the payer account id in payer mode, empty otherwise. Thread it through `CostRecord`, `insertFinOpsRecords` (19 → 20 columns), the upsert partition, Analyze pass-through and `AnalyzedCostRow`, and the raw M scripts.
    - `Input.ConnectionID`; `Output.LZ`, `Output.Connection`; enriched columns `lz_id, lz, connection_id, connection, billing_currency` (43 → 48 after item 2). `billing_currency` is the LZ's currency.
    - Warnings: an Account's Connection in a different LZ than its Environment (`Build`). In Enrich, log counts of rows whose `currency` ≠ their LZ's currency, and of rows whose Region's CSP ≠ their LZ's CSP; keep the rows.
+7. **Region / Zone** (spec §2, confirmed 2026-10-14). Zone is an availability zone; it can be mapped to Region, and its Code is unique only within its Region.
+   - Add `zones` after `regions` in `Schema`, with ref `region` (RefCan → `regions`), `ScopeRef: "region"` and `Catalog: true`. Add a `lookupZone(region, raw)` like `lookupRegion`: scoped to the row's Region when one is known, otherwise unique across all zones.
+   - Cost Explorer: parse the `AZ` dimension into a new `CostRecord.Zone` and add a `SERVICE_AZ` group-by mode (SERVICE + AZ). Mocks set `<region>a` (e.g. `ap-southeast-1a`) in that mode.
+   - Raw FinOps gains `zone` after `region` (20 → 21 columns with item 6): insert, upsert partition and `columnOr` upgrade, Analyze pass-through, `AnalyzedCostRow`, raw M scripts.
+   - `Input.Zone`, `Output.Zone`; enriched columns `zone_id, zone` (48 → 50). Bottom-up Zone → Region → CSP; never top-down.
+   - Enrich warning: log the count of rows whose Zone's Region ≠ the row's Region.
 
 Acceptance: all tests pass. `openlz taxonomy validate` passes with 0 warnings. No `--tenant` flag remains. The mock smoke test in §3 shows `product_line_id` filled for resource rows whose ResourceGroup has a CustomerFunc.
 
@@ -289,6 +295,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 ## 5. Product decisions (answered 2026-10-14)
 - **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
 - **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
+- **Region / Zone (2026-10-14):** Region becomes the pair Region/Zone; Zone can be mapped to Region (Task 0 item 7).
 - **CSP and LZ / Connection (2026-10-14):** each LZ has exactly one CSP, so CSP moves up to sit above LZ; Region stays below Account. Account maps to its billing Connection; Environment is under an LZ; **one billing currency per LZ** (Task 0 item 6).
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.

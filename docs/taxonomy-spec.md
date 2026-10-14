@@ -13,11 +13,12 @@
   a managed Code.
 - **Cost-data codes.** For levels that also appear on cost data, the Code must equal the value
   the cloud reports: Account Code = AWS account id, Connection Code = billing source id (e.g. the
-  AWS payer account id), Region Code = `ap-southeast-1`, Service Code = `AmazonEC2`,
+  AWS payer account id), Region Code = `ap-southeast-1`, Zone Code = availability zone
+  `ap-southeast-1a`, Service Code = `AmazonEC2`,
   Usage Code = usage type `BoxUsage:t3.medium`.
 - **`Group/Member`** is one level with two parts. The *member* is what appears on cost data
-  (Connection, Account, Service, Usage, Resource). The *group* is the business label it maps to
-  (LZ, Environment, ServiceCat, ServiceUsage, ResourceGroup).
+  (Connection, Account, Zone, Service, Usage, Resource). The *group* is the label it maps to
+  (LZ, Environment, Region, ServiceCat, ServiceUsage, ResourceGroup).
 
 ## 2. Hierarchies
 
@@ -37,7 +38,7 @@
     + CSP
       + LZ / Connection          (one CSP and one billing currency per LZ)
         + Environment / Account
-          + Region
+          + Region / Zone
             + ServiceCat / Service
               + ServiceUsage / Usage
                 + ResourceGroup / Resource
@@ -48,8 +49,8 @@
   has exactly one CSP and one **billing currency**.
 - **Connection** is one billing source inside an LZ: the account or enrollment that receives the
   bill (e.g. an AWS payer/management account). It bills in its LZ's currency.
-- **Region** stays below Account because one Account runs in many Regions; a Region is taken from
-  the cost row.
+- **Region / Zone** stays below Account because one Account runs in many Regions. A Zone is an
+  availability zone inside a Region; both are taken from the cost row.
 
 ## 3. Relations
 
@@ -76,6 +77,7 @@ Relation types:
 | Account | can be mapped | Connection | The billing source the Account is billed through; for AWS, the payer account in Cost Explorer |
 | Account | can be mapped | Environment | |
 | Region | can be mapped | CSP | Region Code is unique only within its CSP |
+| Zone | can be mapped | Region | Zone Code is unique only within its Region |
 | Service | can be mapped | ServiceCat | |
 | ServiceUsage | can be mapped | Service | |
 | Usage | can be mapped | ServiceUsage | |
@@ -90,6 +92,7 @@ An App's CSPs and LZs are not stored. They come from its Environments (App ↔ E
 - An Environment should be linked to at least one App.
 - An Account's Connection should be in the same LZ as the Account's Environment.
 - A cost row's Region should belong to the CSP of its LZ.
+- A cost row's Zone should belong to its Region.
 
 ## 4. Currency
 
@@ -103,8 +106,9 @@ An App's CSPs and LZs are not stored. They come from its Environments (App ↔ E
 
 | Level | Unique within |
 |---|---|
-| Every level except Region | its level (one Code per item) |
+| Every level except Region and Zone | its level (one Code per item) |
 | Region | its CSP (the same Region Code may exist under two CSPs) |
+| Zone | its Region (e.g. Azure zones `1`, `2`, `3` repeat in every Region) |
 | Resource ID | all Resources |
 | App ↔ Environment link | each pair appears once |
 
@@ -115,7 +119,7 @@ Names may repeat. A repeated name only matches when another known level narrows 
 Each cost row is matched in both directions, repeated until nothing changes.
 
 1. **Evidence:** tags that match the taxonomy (by Code, or by a Name that is unique), plus the
-   row's own Connection (payer), Account, CSP, Region, Service, Usage type and Resource ID.
+   row's own Connection (payer), Account, CSP, Region, Zone, Service, Usage type and Resource ID.
 2. **Bottom-up**, most specific first:
    - Resource → ResourceGroup → CustomerFunc → ProductLine → OwnerTeam → CostCenter → BusinessUnit
    - Resource → ResourceGroup → CustomerFunc → ProductLine → App → Project → BusinessUnit
@@ -123,7 +127,7 @@ Each cost row is matched in both directions, repeated until nothing changes.
    - Account → Environment → App → Project → BusinessUnit
    - Account → Connection → LZ → CSP;  Environment → LZ → CSP
    - App → CostCenter → BusinessUnit
-   - Usage → ServiceUsage → Service → ServiceCat;  Region → CSP
+   - Usage → ServiceUsage → Service → ServiceCat;  Zone → Region → CSP
 3. **Top-down:**
    - BusinessUnit → Project → App → Environment → Account
    - BusinessUnit → CostCenter → OwnerTeam → ProductLine → CustomerFunc
@@ -137,7 +141,7 @@ Each cost row is matched in both directions, repeated until nothing changes.
    one Project still yields the Project and BusinessUnit.
 5. **Repeated names** (e.g. "Production") are matched within an already-known parent. Codes always
    match directly.
-6. **Never inferred top-down:** Region, ServiceCat/Service, ServiceUsage/Usage and
+6. **Never inferred top-down:** Region/Zone, ServiceCat/Service, ServiceUsage/Usage and
    ResourceGroup/Resource. These come only from the cost row itself. A value the row already
    carries (e.g. an unknown Account or Connection) is never replaced.
 7. **Priority:** a tag that matches the taxonomy beats a derived value. A tag that matches
