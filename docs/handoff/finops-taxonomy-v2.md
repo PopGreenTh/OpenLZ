@@ -147,13 +147,13 @@ The code implements everything in §2 above. The spec adds the following; each i
    - New enriched columns `product_line_id`, `product_line`. Update `insertEnrichedRecords`, `enrichedColumnSelect`, `ReadEnrichedFromParquet` and the column count in this doc (41 → 43).
    - Bottom-up gains CustomerFunc → ProductLine → OwnerTeam and ProductLine → App. This lets a resource in a shared Environment reach its App; add a test for that.
    - Add a warning in `Build`: ProductLine.app.cost_center ≠ ProductLine.owner_team.cost_center (spec §3.3).
-3. **Shared catalogs** (spec §4): CSP, Region, ServiceCat, Service, ServiceUsage, Usage are shared by all tenants.
-   - Add `Shared bool` to `CollectionSpec` and set it on those six collections. (`Catalog` stays as is; ResourceGroup/Resource are catalog but **not** shared.)
+3. **Shared catalogs** (spec §4): CSP, Region, ServiceCat, Service are shared by all tenants. ServiceUsage and Usage stay **per tenant** (user decision 2026-10-14); a tenant's `service_usages.service` refs a shared Service.
+   - Add `Shared bool` to `CollectionSpec` and set it on those four collections. (`Catalog` stays as is; ServiceUsage, Usage, ResourceGroup and Resource are catalog but **not** shared.)
    - Snapshot files: shared collections live in **`taxonomy/catalog.json`** (no tenant). Tenant files keep only tenant-owned collections. `taxonomy.Load(path)` becomes `LoadTenant(tenantPath, catalogPath)`, which merges both, then `Build`. Reject a shared collection inside a tenant file, and a tenant collection inside `catalog.json`.
    - `LoadOptional`: the catalog path defaults to `taxonomy/catalog.json` next to the tenant file. A missing catalog is fine (catalog levels just don't resolve).
    - Enrich: `EnrichCostCentersInput` gains `CatalogPath` (JSON `catalogPath`, CLI `--catalog`).
    - Directus (Task 1): shared collections have **no** `tenant` field. Pull/push them with `--catalog` (one file), separately from tenant pulls.
-   - Move the catalog rows out of `taxonomy/taxonomy.json` and `taxonomy/taxonomy_tenant_a.json` into `taxonomy/catalog.json`, merging duplicates (tenant_a's catalog is a subset of default's).
+   - Move the `csps`, `regions`, `service_cats` and `services` rows out of `taxonomy/taxonomy.json` and `taxonomy/taxonomy_tenant_a.json` into `taxonomy/catalog.json`, merging duplicates (tenant_a's are a subset of default's). `service_usages` and `usages` stay in the tenant files.
 4. **Code naming** (spec §1): the business key is called **Code**. In the snapshot JSON, rename the row key `"id"` → `"code"` and keep reading `"id"` as an alias for one release. Rename `Row.ID()` → `Row.Code()`. Keep the internal Go `Slot.ID` and the enriched `*_id` columns: they are output column names and must not change. Resources keep the key `"code"` too; its value is the cloud resource id.
 5. **Docs:** update the hierarchy and relation lists in `GEMINI.md` §2.5 to point at the spec.
 
@@ -286,7 +286,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 - `GEMINI.md` and `CLAUDE.md` already point here. After Task 1, change the "in progress" note to "done".
 
 ## 5. Product decisions (answered 2026-10-14)
-- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds Tenant as root, OwnerTeam (renamed Owner), ProductLine (can ref App), Code naming, and catalogs shared across tenants. ServiceUsage/Usage are shared on the assumption that they are provider-defined; the user has not confirmed this yet.
+- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds Tenant as root, OwnerTeam (renamed Owner), ProductLine (can ref App), Code naming, and catalogs shared across tenants: **only CSP/Region and ServiceCat/Service are shared**; ServiceUsage/Usage are per tenant (confirmed).
 - **Q1 – matching direction:** matching runs both top-down (BU → Project → App → …) and bottom-up (Resource → … → Environment/Account, and Environment/Account → … → Project → BU). Implemented as described in §2. Unmatched tags no longer block derivation.
 - **Q2 – owner vs cost center conflict:** do **not** flag it.
 - **Q3 – environments vs apps:** tenants have both apps with several environments and environments hosting several apps. Implemented as the many-to-many `app_environments` junction, with intersection narrowing (§2). A repeated name like "Production" is matched within an already-resolved App; ids always match directly.

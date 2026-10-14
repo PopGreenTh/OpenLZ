@@ -35,9 +35,9 @@
   + Project
     + App
       + Environment / Account
-        + CSP / Region                  ┐
-          + ServiceCat / Service        │ shared catalog (§4)
-            + ServiceUsage / Usage      ┘
+        + CSP / Region                  ┐ shared catalog (§4)
+          + ServiceCat / Service        ┘
+            + ServiceUsage / Usage          (per tenant)
               + ResourceGroup / Resource    (per tenant)
 ```
 
@@ -77,12 +77,13 @@ Relation types:
 
 | Scope | Levels |
 |---|---|
-| **Per tenant** | BusinessUnit, CostCenter, OwnerTeam, ProductLine, CustomerFunc, Project, App, Environment, Account, ResourceGroup, Resource |
-| **Shared by all tenants** | CSP, Region, ServiceCat, Service, ServiceUsage, Usage |
+| **Per tenant** | BusinessUnit, CostCenter, OwnerTeam, ProductLine, CustomerFunc, Project, App, Environment, Account, ServiceUsage, Usage, ResourceGroup, Resource |
+| **Shared by all tenants** | CSP, Region, ServiceCat, Service |
 
 - Shared catalogs describe the cloud provider, not an organization. They are maintained once and
   every tenant uses them.
-- *ServiceUsage/Usage are included as shared because they are provider-defined like Service. To be confirmed.*
+- ServiceUsage/Usage are per tenant: each tenant groups usage types its own way, and a tenant's
+  ServiceUsage may map to a shared Service.
 - Matching never crosses tenants. Only shared catalogs are visible to every tenant.
 - A tenant-owned item may reference a shared catalog item; a shared item never references a
   tenant-owned item.
