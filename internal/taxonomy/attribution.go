@@ -8,7 +8,6 @@ const (
 	EvidenceRG       = "rg"       // ResourceGroup code → Project node
 	EvidenceAcctEnv  = "acctenv"  // Account code → Environment node
 	EvidenceAccount  = "account"  // Account code → App node
-	EvidenceRegion   = "region"   // Region code → Environment node (weak)
 	EvidenceLZ       = "lz"       // LZ code → Project node (last resort)
 )
 
@@ -45,19 +44,15 @@ func (c *Catalog) AttributionTables() ([]ProjectNode, []Evidence) {
 	for _, n := range c.ordered[ResourceGroups] {
 		add(EvidenceRG, n.id, n.mapped)
 	}
+	// An account is looked up through its OU chain: the nearest OU with linked Apps decides.
 	for _, acc := range c.ordered[Accounts] {
-		for _, app := range acc.multi[Apps] {
+		for _, app := range accountApps(acc) {
 			add(EvidenceAccount, acc.id, app)
 		}
 	}
 	for _, acc := range c.ordered[Accounts] {
 		for _, env := range acc.multi[Environments] {
 			add(EvidenceAcctEnv, acc.id, env)
-		}
-	}
-	for _, env := range c.ordered[Environments] {
-		for _, region := range env.multi[Regions] {
-			add(EvidenceRegion, region.id, env)
 		}
 	}
 	for _, prj := range c.ordered[Projects] {

@@ -29,6 +29,7 @@ const (
 	// Cloud hierarchy.
 	LandingZones   = "landing_zones"
 	Connections    = "connections"
+	OUs            = "ous"
 	Accounts       = "accounts"
 	Regions        = "regions"
 	Zones          = "zones"
@@ -41,9 +42,8 @@ const (
 
 	// Cloud <-> Project links (many-to-many junctions).
 	ProjectLZs          = "project_lzs"
-	AppAccounts         = "app_accounts"
+	AppOUs              = "app_ous"
 	AccountEnvironments = "account_environments"
-	EnvironmentRegions  = "environment_regions"
 
 	// Aliases map invalid tag values to the correct code (spec §3.3).
 	Aliases = "aliases"
@@ -145,7 +145,7 @@ type CollectionSpec struct {
 //
 //	Biz:     BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer
 //	Project: Project → App → Environment → Feature → Function
-//	Cloud:   LZ/Connection → Account/CSPAccount → Region/Zone → ServiceCat/Service
+//	Cloud:   LZ/Connection → OU (nested) → Account → Region/Zone → ServiceCat/Service
 //	         → ServiceUsage/UsageType → ResourceGroup/Resource
 //
 // Project → Biz (one level for one level):
@@ -155,9 +155,10 @@ type CollectionSpec struct {
 //
 // Cloud ↔ Project (many-to-many, aligned levels):
 //
-//	Project ↔ LZ (project_lzs), App ↔ Account (app_accounts), Account ↔ Environment
-//	(account_environments: a dedicated account lives in one Environment), Environment ↔ Region
-//	(environment_regions); a Resource or ResourceGroup can be mapped to a Project path
+//	Project ↔ LZ (project_lzs), App ↔ OU (app_ous: an OU, nested, hosts Apps; an Account's
+//	Apps come from the nearest OU above it that has links), Account ↔ Environment
+//	(account_environments: a dedicated Account lives in one Environment); a Resource or
+//	ResourceGroup can be mapped to a Project path
 //	at any depth (attribute project_path, written as a path hash such as |PRJ|APP|ENV|)
 var Schema = []CollectionSpec{
 	{Name: BusinessUnits, Label: "Business Unit", Hierarchy: HierBiz},
@@ -200,8 +201,18 @@ var Schema = []CollectionSpec{
 		}},
 	{Name: Connections, Label: "Connection", Hierarchy: HierCloud,
 		Refs: []RefSpec{{Field: "landing_zone", Target: LandingZones, Kind: RefParent}}},
+	// OUs nest: a root OU names its landing_zone, every other OU names its parent. A Target equal
+	// to the collection itself is the one allowed self-reference.
+	{Name: OUs, Label: "OU", Hierarchy: HierCloud,
+		Refs: []RefSpec{
+			{Field: "parent", Target: OUs, Kind: RefCan},
+			{Field: "landing_zone", Target: LandingZones, Kind: RefCan},
+		}},
 	{Name: Accounts, Label: "Account", Hierarchy: HierCloud,
-		Refs: []RefSpec{{Field: "connection", Target: Connections, Kind: RefCan}}},
+		Refs: []RefSpec{
+			{Field: "connection", Target: Connections, Kind: RefCan},
+			{Field: "ou", Target: OUs, Kind: RefCan},
+		}},
 	{Name: Regions, Label: "Region", Hierarchy: HierCloud, Catalog: true, ScopeField: "csp",
 		Attrs: []AttrSpec{{Field: "csp", Choices: CSPChoices}}},
 	{Name: Zones, Label: "Zone", Hierarchy: HierCloud, Catalog: true, ScopeField: "region",
@@ -224,20 +235,15 @@ var Schema = []CollectionSpec{
 			{Field: "project", Target: Projects, Kind: RefMust},
 			{Field: "landing_zone", Target: LandingZones, Kind: RefMust},
 		}},
-	{Name: AppAccounts, Label: "App ↔ Account", Hierarchy: HierCloud, Junction: true,
+	{Name: AppOUs, Label: "App ↔ OU", Hierarchy: HierCloud, Junction: true,
 		Refs: []RefSpec{
-			{Field: "account", Target: Accounts, Kind: RefMust},
+			{Field: "ou", Target: OUs, Kind: RefMust},
 			{Field: "app", Target: Apps, Kind: RefMust},
 		}},
 	{Name: AccountEnvironments, Label: "Account ↔ Environment", Hierarchy: HierCloud, Junction: true,
 		Refs: []RefSpec{
 			{Field: "account", Target: Accounts, Kind: RefMust},
 			{Field: "environment", Target: Environments, Kind: RefMust},
-		}},
-	{Name: EnvironmentRegions, Label: "Environment ↔ Region", Hierarchy: HierCloud, Junction: true,
-		Refs: []RefSpec{
-			{Field: "environment", Target: Environments, Kind: RefMust},
-			{Field: "region", Target: Regions, Kind: RefMust},
 		}},
 
 	// Alias: code is the invalid tag value, level says which tag it was found in, and target

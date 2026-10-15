@@ -1106,6 +1106,8 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 		zone_id VARCHAR,
 		zone VARCHAR,
 		attribution_trail VARCHAR,
+		ou_id VARCHAR,
+		ou VARCHAR,
 		timestamp TIMESTAMP
 	);`, tableName)
 	if _, err := e.db.ExecContext(ctx, createTable); err != nil {
@@ -1141,7 +1143,7 @@ func (e *Engine) insertEnrichedRecords(ctx context.Context, tableName string, re
 			r.CSPID, r.CSP, r.RegionID, r.Region, r.ServiceID,
 			r.ServiceUsageID, r.ServiceUsage, r.UsageID, r.Usage,
 			r.ResourceGroupID, r.ResourceGroup, r.ResourceID, r.Resource,
-			r.FeatureID, r.Feature, r.FunctionID, r.Function, r.OwnerTeamID, r.OwnerTeam, r.ProductLineID, r.ProductLine, r.CustomerID, r.Customer, r.LZID, r.LZ, r.ConnectionID, r.Connection, r.BillingCurrency, r.ZoneID, r.Zone, r.AttributionTrail,
+			r.FeatureID, r.Feature, r.FunctionID, r.Function, r.OwnerTeamID, r.OwnerTeam, r.ProductLineID, r.ProductLine, r.CustomerID, r.Customer, r.LZID, r.LZ, r.ConnectionID, r.Connection, r.BillingCurrency, r.ZoneID, r.Zone, r.AttributionTrail, r.OUID, r.OU,
 			ts,
 		); err != nil {
 			return fmt.Errorf("failed appending enriched row: %w", err)
@@ -1241,7 +1243,7 @@ func enrichedColumnSelect(cols map[string]struct{}) string {
 		"csp_id", "csp", "region_id", "region", "service_id",
 		"service_usage_id", "service_usage", "usage_id", "usage",
 		"resource_group_id", "resource_group", "resource_id", "resource",
-		"feature_id", "feature", "function_id", "function", "owner_team_id", "owner_team", "product_line_id", "product_line", "customer_id", "customer", "lz_id", "lz", "connection_id", "connection", "billing_currency", "zone_id", "zone", "attribution_trail",
+		"feature_id", "feature", "function_id", "function", "owner_team_id", "owner_team", "product_line_id", "product_line", "customer_id", "customer", "lz_id", "lz", "connection_id", "connection", "billing_currency", "zone_id", "zone", "attribution_trail", "ou_id", "ou",
 		"timestamp",
 	}
 	parts := make([]string, len(names))
@@ -1295,7 +1297,7 @@ func (e *Engine) ReadEnrichedFromParquet(ctx context.Context, parquetPath string
 			&r.CSPID, &r.CSP, &r.RegionID, &r.Region, &r.ServiceID,
 			&r.ServiceUsageID, &r.ServiceUsage, &r.UsageID, &r.Usage,
 			&r.ResourceGroupID, &r.ResourceGroup, &r.ResourceID, &r.Resource,
-			&r.FeatureID, &r.Feature, &r.FunctionID, &r.Function, &r.OwnerTeamID, &r.OwnerTeam, &r.ProductLineID, &r.ProductLine, &r.CustomerID, &r.Customer, &r.LZID, &r.LZ, &r.ConnectionID, &r.Connection, &r.BillingCurrency, &r.ZoneID, &r.Zone, &r.AttributionTrail,
+			&r.FeatureID, &r.Feature, &r.FunctionID, &r.Function, &r.OwnerTeamID, &r.OwnerTeam, &r.ProductLineID, &r.ProductLine, &r.CustomerID, &r.Customer, &r.LZID, &r.LZ, &r.ConnectionID, &r.Connection, &r.BillingCurrency, &r.ZoneID, &r.Zone, &r.AttributionTrail, &r.OUID, &r.OU,
 			&r.Timestamp,
 		); err != nil {
 			return nil, err

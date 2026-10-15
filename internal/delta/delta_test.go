@@ -102,7 +102,7 @@ func TestFirstRunAttributesEveryLine(t *testing.T) {
 	got := byKey(t, s)
 	want := map[string]string{
 		"ec2":     "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|FEAT-CARD|FUNC-UNSPEC|",
-		"orders":  "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+		"orders":  "|PRJ-PAYMENTS|APP-ORDERS|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"shared":  "|PRJ-PAYMENTS|APP-UNSPEC|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"lake":    "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"mystery": "|PRJ-UNALLOC|APP-UNALLOC|ENV-UNALLOC|FEAT-UNALLOC|FUNC-UNALLOC|",
@@ -161,7 +161,7 @@ func TestResourceOverrideChangeReattributesExactlyThatResource(t *testing.T) {
 
 	// Adding evidence also re-resolves the lines that are unresolved (they may improve), but
 	// only the 3 periods of the resource change.
-	if rep.Selected != 9 || rep.Reattributed != 3 || rep.New != 0 {
+	if rep.Selected != 12 || rep.Reattributed != 3 || rep.New != 0 {
 		t.Fatalf("exactly the 3 periods of the resource change: %+v", rep)
 	}
 	after := byKey(t, s)
@@ -193,10 +193,11 @@ func TestNewEnvironmentImprovesOnlyUnresolvedLines(t *testing.T) {
 	sync(t, s, snap, baseLines(), t0)
 	before := byKey(t, s)
 
-	// A DR environment of the lake app lives in eu-west-1: the unallocated lines can improve.
+	// The unknown account is a DR account of the lake app: a new account in OU-DATA, linked to a
+	// new DR environment. The unallocated lines can improve.
 	snap.Add(taxonomy.Environments, taxonomy.Row{"code": "ENV-DR", "name": "Disaster Recovery", "app": "APP-LAKE", "owner_team": "TEAM-DATA"})
-	snap.Add(taxonomy.Regions, taxonomy.Row{"code": "eu-west-1", "name": "Ireland", "csp": "AWS"})
-	snap.Add(taxonomy.EnvironmentRegions, taxonomy.Row{"environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-DR|", "region": "eu-west-1"})
+	snap.Add(taxonomy.Accounts, taxonomy.Row{"code": "999999999999", "name": "lz-dr-data", "connection": "100000000001", "ou": "OU-DATA"})
+	snap.Add(taxonomy.AccountEnvironments, taxonomy.Row{"account": "999999999999", "environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-DR|"})
 	rep := sync(t, s, snap, baseLines(), t0.Add(time.Hour))
 
 	after := byKey(t, s)
@@ -237,8 +238,7 @@ func TestTotalCostPerCurrencyIsPreserved(t *testing.T) {
 			r["project_path"] = "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"
 		}
 	}
-	snap.Add(taxonomy.Regions, taxonomy.Row{"code": "eu-west-1", "name": "Ireland", "csp": "AWS"})
-	snap.Add(taxonomy.EnvironmentRegions, taxonomy.Row{"environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|", "region": "eu-west-1"})
+	snap.Add(taxonomy.Accounts, taxonomy.Row{"code": "999999999999", "name": "lz-dr-data", "connection": "100000000001", "ou": "OU-DATA"})
 	second := sync(t, s, snap, baseLines(), t0.Add(time.Hour))
 	if !reflect.DeepEqual(first.Totals, second.Totals) || first.Totals["USD/UnblendedCost"] == 0 {
 		t.Fatalf("totals %v vs %v", first.Totals, second.Totals)
@@ -431,5 +431,31 @@ func TestAccountEnvironmentLinkReattributesThatAccount(t *testing.T) {
 	}
 	if l := byKey(t, s)["lake|2026-09-20"]; !strings.Contains(l.ProjectHash, "|APP-LAKE|ENV-PROD|") || !strings.Contains(l.Trail, "acctenv") {
 		t.Fatalf("after link: %+v", l)
+	}
+}
+
+// Editing an OU's App links re-attributes the lines of every account below it.
+func TestOUAppLinkEditReattributesItsAccounts(t *testing.T) {
+	s := openStore(t)
+	snap := sampleSnap(t)
+	sync(t, s, snap, baseLines(), t0)
+	if p := byKey(t, s)["shared|2026-09-20"].ProjectHash; !strings.Contains(p, "APP-UNSPEC") {
+		t.Fatalf("a shared account stops at the project: %s", p)
+	}
+	var keep []taxonomy.Row
+	for _, r := range snap.Collections[taxonomy.AppOUs] {
+		if r["app"] != "APP-ORDERS" {
+			keep = append(keep, r)
+		}
+	}
+	snap.Collections[taxonomy.AppOUs] = keep
+	rep := sync(t, s, snap, baseLines(), t0.Add(time.Hour))
+	// OU-PAYMENTS now hosts only APP-GATEWAY: the shared account's 3 lines and the staging
+	// account's untouched ones; only the shared account's lines change.
+	if rep.Reattributed != 3 {
+		t.Fatalf("report: %+v", rep)
+	}
+	if p := byKey(t, s)["shared|2026-09-20"].ProjectHash; !strings.HasPrefix(p, "|PRJ-PAYMENTS|APP-GATEWAY|") {
+		t.Fatalf("after the edit: %s", p)
 	}
 }

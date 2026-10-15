@@ -50,10 +50,15 @@
   "connections": [
     {"code": "100000000001", "name": "Main payer account", "landing_zone": "LZ-MAIN"}
   ],
+  "ous": [
+    {"code": "OU-DATA", "name": "Data", "parent": "OU-WORKLOADS"},
+    {"code": "OU-PAYMENTS", "name": "Payments", "parent": "OU-WORKLOADS"},
+    {"code": "OU-WORKLOADS", "name": "Workloads", "landing_zone": "LZ-MAIN"}
+  ],
   "accounts": [
-    {"code": "111122223333", "name": "lz-prod-payments", "connection": "100000000001"},
-    {"code": "444455556666", "name": "lz-stg-payments", "connection": "100000000001"},
-    {"code": "777788889999", "name": "lz-prod-data", "connection": "100000000001"}
+    {"code": "111122223333", "name": "lz-prod-payments", "connection": "100000000001", "ou": "OU-PAYMENTS"},
+    {"code": "444455556666", "name": "lz-stg-payments", "connection": "100000000001", "ou": "OU-PAYMENTS"},
+    {"code": "777788889999", "name": "lz-prod-data", "connection": "100000000001", "ou": "OU-DATA"}
   ],
   "regions": [
     {"code": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"},
@@ -111,21 +116,14 @@
     {"project": "PRJ-PAYMENTS", "landing_zone": "LZ-MAIN"},
     {"project": "PRJ-LAKEHOUSE", "landing_zone": "LZ-MAIN"}
   ],
-  "app_accounts": [
-    {"account": "111122223333", "app": "APP-GATEWAY"},
-    {"account": "111122223333", "app": "APP-ORDERS"},
-    {"account": "444455556666", "app": "APP-GATEWAY"},
-    {"account": "777788889999", "app": "APP-LAKE"}
+  "app_ous": [
+    {"ou": "OU-PAYMENTS", "app": "APP-GATEWAY"},
+    {"ou": "OU-PAYMENTS", "app": "APP-ORDERS"},
+    {"ou": "OU-DATA", "app": "APP-LAKE"}
   ],
   "account_environments": [
     {"account": "444455556666", "environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|"},
     {"account": "777788889999", "environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"}
-  ],
-  "environment_regions": [
-    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|", "region": "ap-southeast-1"},
-    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|", "region": "ap-southeast-1"},
-    {"environment": "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|", "region": "ap-southeast-1"},
-    {"environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|", "region": "ap-southeast-1"}
   ],
   "aliases": [
     {"code": "PaymentGateway", "name": "Mock tag without the APP- prefix", "level": "app", "target": "|PRJ-PAYMENTS|APP-GATEWAY|"},

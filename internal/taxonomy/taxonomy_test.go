@@ -61,7 +61,7 @@ func TestSchemaIsInDependencyOrder(t *testing.T) {
 	seen := map[string]bool{}
 	for _, spec := range Schema {
 		for _, ref := range spec.Refs {
-			if !seen[ref.Target] {
+			if !seen[ref.Target] && ref.Target != spec.Name { // OUs reference themselves
 				t.Errorf("%s references %s before it is defined", spec.Name, ref.Target)
 			}
 		}
@@ -323,14 +323,81 @@ func TestAccountOutsideItsProjectsLZWarns(t *testing.T) {
 	    {"code": "LZ1", "name": "one", "csp": "AWS", "currency": "USD"},
 	    {"code": "LZ2", "name": "two", "csp": "AWS", "currency": "USD"}],
 	  "connections": [{"code": "C2", "name": "C2", "landing_zone": "LZ2"}],
-	  "accounts": [{"code": "9", "name": "nine", "connection": "C2"}],
+	  "ous": [{"code": "OU", "name": "OU", "landing_zone": "LZ2"}],
+	  "accounts": [{"code": "9", "name": "nine", "connection": "C2", "ou": "OU"}],
 	  "project_lzs": [{"project": "P", "landing_zone": "LZ1"}],
-	  "app_accounts": [{"account": "9", "app": "A1"}]}`)
+	  "app_ous": [{"ou": "OU", "app": "A1"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cat.Warnings()) != 1 || !strings.Contains(cat.Warnings()[0], "hosts none of the Projects") {
 		t.Fatalf("warnings: %v", cat.Warnings())
+	}
+}
+
+const ouTree = `
+	  "landing_zones": [{"code": "LZ", "name": "lz", "csp": "AWS", "currency": "USD"}],
+	  "ous": [
+	    {"code": "OU-LEAF", "name": "Leaf", "parent": "OU-MID"},
+	    {"code": "OU-MID", "name": "Mid", "parent": "OU-ROOT"},
+	    {"code": "OU-ROOT", "name": "Root", "landing_zone": "LZ"}
+	  ]`
+
+func TestOUsNestAndAnAccountIsLookedUpThroughItsChain(t *testing.T) {
+	// Rows may be listed children first; the account only names its leaf OU.
+	cat, err := buildJSON(t, `{`+minimal+`,`+ouTree+`,
+	  "accounts": [
+	    {"code": "deep", "name": "deep", "ou": "OU-LEAF"},
+	    {"code": "mid", "name": "mid", "ou": "OU-MID"},
+	    {"code": "orphan", "name": "orphan"}],
+	  "app_ous": [{"ou": "OU-ROOT", "app": "A1"}, {"ou": "OU-MID", "app": "A2"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apps := func(code string) string {
+		var out []string
+		for _, n := range accountApps(cat.lookup(Accounts, code)) {
+			out = append(out, n.id)
+		}
+		return strings.Join(out, ",")
+	}
+	// The nearest OU with links decides: OU-LEAF has none, OU-MID hosts A2 and overrides OU-ROOT.
+	if apps("deep") != "A2" || apps("mid") != "A2" || apps("orphan") != "" {
+		t.Fatalf("deep=%q mid=%q orphan=%q", apps("deep"), apps("mid"), apps("orphan"))
+	}
+	// The LZ and the OU slot come from the account alone.
+	out := cat.ResolveCloud(Input{AccountID: "deep"})
+	if out.OU.ID != "OU-LEAF" || out.LZ.ID != "LZ" || out.BillingCurrency != "USD" {
+		t.Fatalf("cloud side: %+v", out)
+	}
+	// Evidence is expanded per account.
+	_, ev := cat.AttributionTables()
+	got := map[string]int{}
+	for _, e := range ev {
+		if e.Kind == EvidenceAccount {
+			got[e.Key]++
+		}
+	}
+	if got["deep"] != 1 || got["mid"] != 1 || got["orphan"] != 0 {
+		t.Fatalf("account evidence: %v", got)
+	}
+}
+
+func TestOUValidation(t *testing.T) {
+	_, err := buildJSON(t, `{`+minimal+`,
+	  "landing_zones": [{"code": "LZ", "name": "lz", "csp": "AWS", "currency": "USD"}],
+	  "ous": [
+	    {"code": "FLOATING", "name": "no parent, no lz"},
+	    {"code": "A", "name": "a", "parent": "B"},
+	    {"code": "B", "name": "b", "parent": "A"},
+	    {"code": "LOST", "name": "lost", "parent": "NOPE"}]}`)
+	if err == nil {
+		t.Fatal("expected OU errors")
+	}
+	for _, want := range []string{`OU "FLOATING": needs a parent OU or a landing_zone`, `parent "NOPE"`, `parent "B"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
 	}
 }
 
@@ -495,8 +562,8 @@ func TestResolveCloudDerivesNothingFromProjectOrBiz(t *testing.T) {
 	if out.LZ.ID != "LZ-MAIN" || out.Connection.ID != "100000000001" || out.BillingCurrency != "USD" || out.Account.ID != "777788889999" {
 		t.Fatalf("cloud side: %+v", out)
 	}
-	if legacy := cat.Resolve(in); legacy.Region.ID != "ap-southeast-1" {
-		t.Fatalf("the legacy matcher derives the region from the environment: %+v", legacy.Region)
+	if legacy := cat.Resolve(in); legacy.App.ID != "APP-ORDERS" {
+		t.Fatalf("the legacy matcher keeps the App tag: %+v", legacy.App)
 	}
 }
 

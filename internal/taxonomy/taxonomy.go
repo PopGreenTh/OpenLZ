@@ -67,6 +67,7 @@ type Output struct {
 
 	LZ              Slot
 	Connection      Slot
+	OU              Slot // the OU the account sits in (the leaf of its chain)
 	Account         Slot
 	CSP             Slot
 	Region          Slot
@@ -159,7 +160,7 @@ func Build(snap *Snapshot) (*Catalog, error) {
 			errs = append(errs, c.link(spec, snap.Rows(spec.Name))...)
 			continue
 		}
-		for i, row := range snap.Rows(spec.Name) {
+		for i, row := range orderSelfRef(spec, snap.Rows(spec.Name)) {
 			where := fmt.Sprintf("%s[%d]", spec.Name, i)
 			if row.Code() == "" || row.Name() == "" {
 				errs = append(errs, fmt.Errorf("%s: code and name are required (code=%q name=%q)", where, row.Code(), row.Name()))
@@ -240,6 +241,7 @@ func Build(snap *Snapshot) (*Catalog, error) {
 			}
 		}
 	}
+	errs = append(errs, c.checkOUs()...)
 	errs = append(errs, c.checkAliases()...)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -247,6 +249,37 @@ func Build(snap *Snapshot) (*Catalog, error) {
 	c.checkBiz()
 	c.checkCloud()
 	return c, nil
+}
+
+// checkOUs requires every OU to hang under a parent OU or directly under a landing zone, and
+// rejects a parent chain that never reaches a landing zone.
+func (c *Catalog) checkOUs() []error {
+	var errs []error
+	for _, ou := range c.ordered[OUs] {
+		if ou.ref("parent") == nil && ou.ref("landing_zone") == nil {
+			errs = append(errs, fmt.Errorf("OU %q: needs a parent OU or a landing_zone", ou.id))
+		}
+	}
+	return errs
+}
+
+// ouLZ returns the landing zone an OU belongs to: the landing_zone of the root of its chain.
+func ouLZ(ou *node) *node {
+	for ou != nil && ou.ref("parent") != nil {
+		ou = ou.ref("parent")
+	}
+	return ou.ref("landing_zone")
+}
+
+// accountApps returns the Apps an Account hosts through its OUs: the links of the nearest OU
+// above it (its own OU first) that has any, so a more specific OU overrides its parents.
+func accountApps(acc *node) []*node {
+	for ou := acc.ref("ou"); ou != nil; ou = ou.ref("parent") {
+		if apps := ou.multi[Apps]; len(apps) > 0 {
+			return apps
+		}
+	}
+	return nil
 }
 
 // checkAliases validates alias targets: a Project path of the alias level's depth, or a Biz code.
@@ -269,6 +302,41 @@ func (c *Catalog) checkAliases() []error {
 		}
 	}
 	return errs
+}
+
+// orderSelfRef puts the rows of a self-referencing collection (OUs) parents first, so a row
+// can be listed before its parent in the file. Rows whose parent never appears (unknown code
+// or a cycle) are appended and reported by the reference check.
+func orderSelfRef(spec CollectionSpec, rows []Row) []Row {
+	var selfField string
+	for _, r := range spec.Refs {
+		if r.Target == spec.Name {
+			selfField = r.Field
+		}
+	}
+	if selfField == "" {
+		return rows
+	}
+	byRef := map[string]bool{} // codes and names of rows already placed
+	var ordered, rest []Row
+	rest = append(rest, rows...)
+	for progress := true; progress && len(rest) > 0; {
+		progress = false
+		var next []Row
+		for _, r := range rest {
+			parent := strings.ToLower(strings.TrimSpace(r[selfField]))
+			if parent == "" || byRef[parent] {
+				ordered = append(ordered, r)
+				byRef[strings.ToLower(r.Code())] = true
+				byRef[strings.ToLower(r.Name())] = true
+				progress = true
+			} else {
+				next = append(next, r)
+			}
+		}
+		rest = next
+	}
+	return append(ordered, rest...)
 }
 
 func checkAttr(a AttrSpec, v string) error {
@@ -553,38 +621,40 @@ func (c *Catalog) checkBiz() {
 	}
 }
 
-// checkCloud warns when an Account's LZ is not one of the LZs of the Projects it serves, or
-// when its Environment belongs to an App the account is not linked to.
+// checkCloud warns when an Account's Environment belongs to an App its OUs do not host, and
+// when an Account's LZ is not one of the LZs of the Projects it serves.
 func (c *Catalog) checkCloud() {
 	for _, acc := range c.ordered[Accounts] {
-		if len(acc.multi[Apps]) > 0 {
-			linked := map[*node]bool{}
-			for _, app := range acc.multi[Apps] {
-				linked[app] = true
+		apps := accountApps(acc)
+		if len(apps) > 0 {
+			hosted := map[*node]bool{}
+			for _, app := range apps {
+				hosted[app] = true
 			}
 			for _, env := range acc.multi[Environments] {
-				if app := env.ref("app"); !linked[app] {
+				if app := env.ref("app"); !hosted[app] {
 					c.warnings = append(c.warnings, fmt.Sprintf(
-						"Account %q is linked to Environment %s but not to its App %q (%s)", acc.id, env.path, app.id, AppAccounts))
+						"Account %q is linked to Environment %s but its OUs do not host that App %q (%s)", acc.id, env.path, app.id, AppOUs))
 				}
 			}
 		}
-		conn := acc.ref("connection")
-		lz := conn.ref("landing_zone")
+		lz := acc.ref("connection").ref("landing_zone")
+		if lz == nil {
+			lz = ouLZ(acc.ref("ou"))
+		}
 		if lz == nil {
 			continue
 		}
-		served, hosted := map[*node]bool{}, false
-		for _, app := range acc.multi[Apps] {
-			prj := app.ref("project")
-			for _, l := range prj.multi[LandingZones] {
-				hosted = true
+		served, hostedLZ := map[*node]bool{}, false
+		for _, app := range apps {
+			for _, l := range app.ref("project").multi[LandingZones] {
+				hostedLZ = true
 				served[l] = true
 			}
 		}
-		if hosted && !served[lz] {
+		if hostedLZ && !served[lz] {
 			c.warnings = append(c.warnings, fmt.Sprintf(
-				"Account %q: connection %q is in LZ %q, which hosts none of the Projects the account serves", acc.id, conn.id, lz.id))
+				"Account %q is in LZ %q, which hosts none of the Projects its OUs serve", acc.id, lz.id))
 		}
 	}
 }
@@ -708,6 +778,7 @@ func (c *Catalog) resolve(in Input, cloudOnly bool) Output {
 	r.set(account)
 	r.set(c.lookup(Connections, in.ConnectionID))
 	r.up()
+	r.set(ouLZ(r.slots[OUs])) // an account without a connection reaches its LZ through its OUs
 
 	// The row's CSP is its own value, else its LZ's, else its Region's.
 	csp := clean(in.CSP)
@@ -765,6 +836,7 @@ func (c *Catalog) resolve(in Input, cloudOnly bool) Output {
 		Function:        r.slot(Functions),
 		LZ:              r.slot(LandingZones),
 		Connection:      slotOf(r.slots[Connections], in.ConnectionID),
+		OU:              r.slot(OUs),
 		ServiceCategory: r.slot(ServiceCats),
 		ServiceUsage:    r.slot(ServiceUsages),
 		ResourceGroup:   r.slot(ResourceGroups),

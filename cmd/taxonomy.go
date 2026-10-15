@@ -63,12 +63,13 @@ var taxonomyInitCmd = &cobra.Command{
 		snap.Add(taxonomy.Environments, taxonomy.Row{"code": "ENV-PROD", "name": "Production", "app": "APP-CORE", "owner_team": "TEAM-CORE"})
 		snap.Add(taxonomy.LandingZones, taxonomy.Row{"code": "LZ-MAIN", "name": "Main Landing Zone", "csp": "AWS", "currency": "USD"})
 		snap.Add(taxonomy.Connections, taxonomy.Row{"code": "123456789012", "name": "Main payer account", "landing_zone": "LZ-MAIN"})
-		snap.Add(taxonomy.Accounts, taxonomy.Row{"code": "123456789012", "name": "lz-prod", "connection": "123456789012"})
+		snap.Add(taxonomy.OUs, taxonomy.Row{"code": "OU-WORKLOADS", "name": "Workloads", "landing_zone": "LZ-MAIN"})
+		snap.Add(taxonomy.Accounts, taxonomy.Row{"code": "123456789012", "name": "lz-prod", "connection": "123456789012", "ou": "OU-WORKLOADS"})
 		snap.Add(taxonomy.Regions, taxonomy.Row{"code": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "csp": "AWS"})
 		snap.Add(taxonomy.ServiceCats, taxonomy.Row{"code": "SC-COMPUTE", "name": "Compute"})
 		snap.Add(taxonomy.Services, taxonomy.Row{"code": "AmazonEC2", "name": "Amazon Elastic Compute Cloud - Compute", "service_cat": "SC-COMPUTE"})
 		snap.Add(taxonomy.ProjectLZs, taxonomy.Row{"project": "PRJ-MAIN", "landing_zone": "LZ-MAIN"})
-		snap.Add(taxonomy.AppAccounts, taxonomy.Row{"account": "123456789012", "app": "APP-CORE"})
+		snap.Add(taxonomy.AppOUs, taxonomy.Row{"ou": "OU-WORKLOADS", "app": "APP-CORE"})
 
 		if _, err := taxonomy.Build(snap); err != nil {
 			return fmt.Errorf("starter taxonomy is invalid: %w", err)

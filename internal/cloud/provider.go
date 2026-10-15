@@ -141,6 +141,8 @@ type EnrichedRecord struct {
 	ZoneID             string    `json:"zone_id,omitempty"`
 	Zone               string    `json:"zone,omitempty"`
 	AttributionTrail   string    `json:"attribution_trail,omitempty"`
+	OUID               string    `json:"ou_id,omitempty"`
+	OU                 string    `json:"ou,omitempty"`
 	Timestamp          time.Time `json:"timestamp"`
 }
 

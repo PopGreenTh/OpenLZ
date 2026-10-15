@@ -50,9 +50,9 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - **Three hierarchies** (single source of truth: `internal/taxonomy/schema.go` → `Schema`):
   - **Biz** (who pays): `BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer`
   - **Project** (what we build): `Project → App → Environment → Feature → Function`
-  - **Cloud** (where it runs): `LZ/Connection → Account → Region/Zone → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource`. CSP and currency are attributes of the LZ (CSP also of Region), not levels.
+  - **Cloud** (where it runs): `LZ/Connection → OU (nested) → Account → Region/Zone → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource`. CSP and currency are attributes of the LZ (CSP also of Region), not levels.
 - **Project → Biz, one level for one level:** Project *must ref* BusinessUnit; App *must ref* CostCenter; Environment *can ref* OwnerTeam; Feature *can ref* ProductLine; Function *can ref* Customer. The refs along a Project path must form a valid Biz path (a `Build` warning otherwise).
-- **Cloud ↔ Project links** are many-to-many junctions: `project_lzs`, `app_accounts`, `environment_regions`. A Resource or ResourceGroup can be mapped to a Project path (`project_path`, e.g. `|PRJ|APP|ENV|`).
+- **Cloud ↔ Project links** are many-to-many junctions: `project_lzs`, `app_ous` (an Account's Apps come from the nearest OU above it with links), `account_environments` (a dedicated Account lives in one Environment). Region/Zone have no attribution role. A Resource or ResourceGroup can be mapped to a Project path (`project_path`, e.g. `|PRJ|APP|ENV|`).
 - **Codes.** Every row has a Code (the business key; `"id"` is still read as an alias) and a Name. Environment, Feature and Function codes are unique only within their parent, so references to them use the path hash when the code repeats.
 - **System nodes** `<LEVEL>-UNSPEC` / `<LEVEL>-UNALLOC` are generated, never edited or pushed.
 - Attribution rules (spec §6) live in `internal/attribution`; `taxonomy.Catalog.Resolve` is the older two-way matcher.

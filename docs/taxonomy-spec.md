@@ -24,11 +24,14 @@
 |---|---|---|
 | **Biz** | Who pays? | BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer |
 | **Project** | What do we build? | Project → App → Environment → Feature → Function |
-| **Cloud** | Where does it run and how is it billed? | LZ/Connection → Account/CSPAccount → Region/Zone → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource |
+| **Cloud** | Where does it run and how is it billed? | LZ/Connection → OU (nested) → Account/CSPAccount → Region/Zone → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource |
 
 - **LZ** is a Landing Zone, a cloud organization the company runs (e.g. an AWS Organization).
   **Connection** is one billing source inside it (e.g. an AWS payer account). An LZ has exactly one
   **CSP** and one **billing currency**, both stored as attributes of the LZ (§3.4). CSP is not a level.
+- **OU** is an organizational unit of the LZ (e.g. an AWS Organizations OU). OUs nest: a root OU sits
+  under its LZ, every other OU under a parent OU. An Account names only its own OU; the chain above it is
+  found by looking the Account up.
 - **Region / Zone** sits below Account because one Account runs in many Regions. A Zone is an
   availability zone inside a Region. Both come from the cost row.
 - **Environment** belongs to one App, so an Environment Code only has to be unique within its App.
@@ -36,10 +39,11 @@
 ```
 Biz                    Project                  Cloud
 BusinessUnit      ◄──  Project          ◄·····► LZ / Connection   (CSP, currency)
-CostCenter        ◄──  App              ◄·····► Account / CSPAccount
-OwnerTeam         ◄··  Environment      ◄·····► Region / Zone
-ProductLine       ◄··  Feature                  ServiceCat / Service
-Customer          ◄··  Function                ServiceUsage / UsageType
+CostCenter        ◄──  App              ◄·····► OU (nested)
+OwnerTeam         ◄··  Environment      ◄·····► Account / CSPAccount
+ProductLine       ◄··  Feature                  Region / Zone       (catalog, no attribution role)
+Customer          ◄··  Function                ServiceCat / Service
+                                                ServiceUsage / UsageType
                                                 ResourceGroup / Resource ····► Project path
 ──►  must ref     ··►  can ref      ◄·····►  many-to-many
 ```
@@ -65,9 +69,8 @@ can always be derived from a Project path.
 | Project level | Cloud level | Meaning |
 |---|---|---|
 | Project | LZ / Connection | A Project can run in several LZs; an LZ hosts many Projects |
-| App | Account | An App can use several Accounts; an Account can host several Apps (shared account) |
-| Environment | Account | A dedicated Account lives in one Environment (`account_environments`); it fixes the App too and is stronger evidence than the App link |
-| Environment | Region | Narrows an App to an Environment (weak evidence on its own) |
+| App | OU | An OU hosts Apps (`app_ous`). An Account's Apps are those of the nearest OU above it that has links, so a deeper OU overrides its parents and an OU with several Apps is a shared-account case |
+| Environment | Account | A dedicated Account lives in one Environment (`account_environments`); it fixes the App too and is stronger evidence than the OU link |
 | Feature, Function | — | No Cloud counterpart: reached only through ResourceGroup/Resource mappings |
 | (any level) | ResourceGroup / Resource | A Resource or ResourceGroup can be mapped to a Project path at any depth |
 
@@ -100,8 +103,9 @@ path hash of that depth for Project levels, a Biz code for Biz levels. An alias 
   Project's BusinessUnit, and so on down the levels).
 - A cost row's Connection currency must equal the row's currency.
 - A cost row's Region should have the same CSP as its LZ.
+- An Account linked to an Environment should sit under an OU that hosts that Environment's App.
 - A cost row's Zone should belong to its Region.
-- An Account's Connection should be consistent with the LZs of the Projects it serves.
+- An Account's LZ (its Connection's, else its OU chain's) should be one of the LZs of the Projects its OUs serve.
 
 ## 4. System nodes: UNSPEC and UNALLOC
 
@@ -135,7 +139,7 @@ Each cost line is attributed to one Project path, and its Biz path is derived fr
 3. **Tag anchor.** Every valid Project path is scored against the line's tags; deeper levels weigh
    more (Project 1, App 2, Environment 4, Feature 8, Function 16), so **the deepest valid tag wins**.
    A wrong upper tag is corrected and the line is flagged `tag-corrected`.
-4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account → Environment, Account → App, Region.
+4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account → Environment, Account's OU → Apps. Region and Zone have no attribution role (a cost row's region is the client's default when the group-by does not sense it).
    Evidence that contradicts what is already known is **ignored and flagged**, never applied.
 5. **LZ** is used as a last resort, only when nothing more specific is known (an LZ hosts many
    Projects, so it must not settle an ambiguous shared Account).
@@ -155,7 +159,7 @@ codes, so it cannot be a path that does not exist.
 | Shared account, one valid App tag | The App tag wins; the account's other App is dropped |
 | Shared account, untagged | Unallocated (LZ does not decide) |
 | Valid tags but ResourceGroup maps to another App | Tags kept; ResourceGroup ignored and flagged |
-| Dedicated account, no tags | App from the Account, Environment from the Region, rest `UNSPEC` |
+| Dedicated account, no tags | App and Environment from the account's Environment link, rest `UNSPEC` |
 | Resource override | The override path, whatever the tags say |
 
 ## 7. Currency
@@ -174,7 +178,7 @@ re-attributed, so history is never recomputed blindly and nothing is lost when m
 | Kind | Examples | Detected by |
 |---|---|---|
 | **Data delta** | New cost lines; AWS restating recent days; a line's tags or cloud keys changed; a cost amount changed | Fingerprints of each line |
-| **Mapping delta** | A Directus edit: new resource override, Account ↔ App link, new Environment, moved or removed node | Comparing the previous and new taxonomy snapshot |
+| **Mapping delta** | A Directus edit: new resource override, new `app_ous` or `account_environments` link, moved OU, new Environment, moved or removed node | Comparing the previous and new taxonomy snapshot |
 
 ### 8.2 Stored per line
 - `input_hash`: hash of everything attribution reads (Project and Biz tags, Connection, Account,
