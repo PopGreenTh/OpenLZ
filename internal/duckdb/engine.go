@@ -1385,7 +1385,8 @@ type RawCostLine struct {
 }
 
 // ReadRawFinOpsLines reads the raw FinOps parquet, one line per cost line. A line is identified
-// by its Cost Explorer grouping keys (tags are attributes, not part of the identity), and when
+// by its Cost Explorer grouping keys including the Project/App tag pair (a two-level run returns
+// one row per tag pair for the same account, service and day), and when
 // the file holds several versions of a line the latest recorded_at wins. Older files without
 // csp/connection_id/zone/resource_id read those columns as ”. Rows come back in key order.
 func (e *Engine) ReadRawFinOpsLines(ctx context.Context, parquetPath string) ([]RawCostLine, error) {
@@ -1412,14 +1413,14 @@ func (e *Engine) ReadRawFinOpsLines(ctx context.Context, parquetPath string) ([]
 		FROM read_parquet('%s')
 	), ranked AS (
 		SELECT *, ROW_NUMBER() OVER (
-			PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id
-			ORDER BY recorded_at DESC NULLS LAST, primary_tag, secondary_tag, amount) AS rn
+			PARTITION BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id, primary_tag, secondary_tag
+			ORDER BY recorded_at DESC NULLS LAST, amount) AS rn
 		FROM src
 	)
 	SELECT account_id, account_name, service, usage_date, usage_period, metric, frequency, currency, csp,
 		connection_id, region, zone, usage_type, resource_id, primary_tag, secondary_tag, amount
 	FROM ranked WHERE rn = 1
-	ORDER BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id`,
+	ORDER BY account_id, service, usage_date, usage_period, metric, frequency, region, zone, usage_type, resource_id, primary_tag, secondary_tag`,
 		sel("account_id"), sel("account_name"), sel("service"), sel("usage_date"), sel("usage_period"),
 		sel("metric"), sel("frequency"), sel("currency"), sel("csp"), sel("connection_id"), sel("region"),
 		sel("zone"), sel("usage_type"), sel("resource_id"), sel("primary_tag"), sel("secondary_tag"),

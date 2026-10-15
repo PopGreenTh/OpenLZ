@@ -25,7 +25,7 @@ import (
 
 // Line is one cost line: its identity, its amount and the inputs attribution reads.
 type Line struct {
-	Key       string // Cost Explorer grouping keys; tags are attributes, not identity
+	Key       string // Cost Explorer grouping keys plus the Project/App tag pair
 	UsageDate string // YYYY-MM-DD
 	Metric    string
 	Currency  string
@@ -33,10 +33,12 @@ type Line struct {
 	Row       attribution.Row
 }
 
-// KeyOf is the identity of a raw FinOps line.
+// KeyOf is the identity of a raw FinOps line: the Cost Explorer grouping keys and the
+// Project/App tag pair. A two-level (tag) run returns one row per tag pair for the same
+// account, service and day, each with its own cost, so the tag pair is part of the grain.
 func KeyOf(l duckdb.RawCostLine) string {
 	return strings.Join([]string{l.AccountID, l.Service, l.UsageDate, l.UsagePeriod, l.Metric, l.Frequency,
-		l.Region, l.Zone, l.UsageType, l.ResourceID}, "|")
+		l.Region, l.Zone, l.UsageType, l.ResourceID, l.PrimaryTag, l.SecondaryTag}, "|")
 }
 
 // FromRaw converts a raw FinOps line.

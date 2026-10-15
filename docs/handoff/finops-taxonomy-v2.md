@@ -341,7 +341,7 @@ Spec §8 is the contract; this task builds it on top of Task 2b. Package: `inter
 - Any change to the node set (added, removed or modified Project path) re-resolves every active line (distinct combinations, cheap) and writes only the lines whose result changed. Other mapping changes select the lines whose inputs match a changed key, plus the unresolved lines when evidence was added.
 - Alias table: `aliases` collection in `Schema`, `alias` input table and a `lal`/`ln` step in the attribution SQL; reference case 14.
 - Every Sync checks that the total active cost per currency/metric read back from the store equals the total before; a mismatch is an error.
-- Assumptions made without a product decision (listed in `docs/taxonomy-spec.md` §9; confirm with the user): what "unresolved" means for the audit list, the line identity (tags are not part of it), and the REMOVED date window.
+- Assumptions made without a product decision (listed in `docs/taxonomy-spec.md` §9; confirm with the user): what "unresolved" means for the audit list, the line identity (grouping keys plus the tag pair), and the REMOVED date window.
 
 Acceptance (add as tests):
 - A second run with no new data and no taxonomy change writes nothing (idempotent).

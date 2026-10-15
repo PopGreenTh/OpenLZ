@@ -222,7 +222,9 @@ earlier result so a report can show "as reported then" next to "as restated now"
 - **Unresolved** in the movement report means the evidence did not reach the Project, App or Environment of the
   path; `FEAT-UNSPEC` and `FUNC-UNSPEC` are the normal case (no Cloud counterpart) and are not reported.
 - **Line identity** for the delta is the Cost Explorer grouping keys (account, service, period, metric, frequency,
-  region, zone, usage type, resource id). Tags are attributes of a line, so a restated tag is a `KEYS` change.
+  region, zone, usage type, resource id) **plus the Project/App tag pair**: a two-level tag run returns one row per
+  tag pair for the same account, service and day, each with its own cost. A restated tag is therefore a `NEW` line
+  plus a `REMOVED` line; `KEYS` covers the other inputs (connection, CSP, currency, account name).
   `input_hash` leaves out the resource group (it comes from the taxonomy, so a change to it is a mapping delta).
 - **REMOVED** applies only inside the date window of the incoming data: a stored line with a date between the
   earliest and latest incoming date that is no longer present is marked inactive (kept for history).

@@ -2,12 +2,15 @@ package delta
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/PopGreenTh/OpenLZ/internal/attribution"
+	"github.com/PopGreenTh/OpenLZ/internal/cloud"
+	"github.com/PopGreenTh/OpenLZ/internal/duckdb"
 	"github.com/PopGreenTh/OpenLZ/internal/taxonomy"
 )
 
@@ -336,5 +339,68 @@ func TestReportPrints(t *testing.T) {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("report is missing %q:\n%s", want, b.String())
 		}
+	}
+}
+
+// Two-level Cost Explorer runs (Project tag, then App tag) return several rows for the same
+// account, service and day, one per tag pair, each with its own cost. The tag pair is part of
+// the grain: dropping one of the rows would silently lose its cost.
+func TestTagPairsOfOneDayAreSeparateLines(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	engine, err := duckdb.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	rec := func(p, a string, amount float64) cloud.CostRecord {
+		return cloud.CostRecord{
+			AccountID: "225989366329", AccountName: "cvd-org-mgmt", Service: "Amazon Simple Storage Service",
+			UsageDate: "2026-08-06", Amount: amount, Unit: "USD", Currency: "USD", Region: "ap-southeast-1",
+			UsageType: "Usage", PrimaryTag: p, SecondaryTag: a, Timestamp: time.Now(),
+		}
+	}
+	records := []cloud.CostRecord{
+		rec("CloudValueDelta", "Untagged", 0.0006305649),
+		rec("CloudValueDelta", "SecurityAudit", 0.0443907513),
+	}
+	path := filepath.Join(dir, "raw.parquet")
+	if err := engine.WriteFinOpsParquet(ctx, records, path); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := engine.ReadRawFinOpsLines(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 2 {
+		t.Fatalf("both tag pairs must survive, got %d lines", len(raw))
+	}
+	lines := []Line{FromRaw(raw[0]), FromRaw(raw[1])}
+	if lines[0].Key == lines[1].Key {
+		t.Fatalf("tag pairs share a key: %s", lines[0].Key)
+	}
+	s := openStore(t)
+	rep := sync(t, s, sampleSnap(t), lines, t0)
+	want := 0.0006305649 + 0.0443907513
+	if got := rep.Totals["USD/UnblendedCost"]; got < want-1e-12 || got > want+1e-12 {
+		t.Fatalf("total %.10f, want %.10f", got, want)
+	}
+}
+
+// With the tag pair in the line identity, a restated tag is a new line plus a removed line;
+// the cost moves with it and the total is unchanged.
+func TestRestatedTagIsNewPlusRemoved(t *testing.T) {
+	s := openStore(t)
+	snap := sampleSnap(t)
+	line := func(app string) Line {
+		raw := duckdb.RawCostLine{AccountID: "777788889999", Service: "s3", UsageDate: "2026-09-22", UsagePeriod: "2026-09-22",
+			Metric: "UnblendedCost", Frequency: "DAILY", Currency: "USD", Region: "ap-southeast-1", UsageType: "Usage",
+			PrimaryTag: "PRJ-LAKEHOUSE", SecondaryTag: app, Amount: 12.5}
+		return FromRaw(raw)
+	}
+	first := sync(t, s, snap, []Line{line("APP-ORDRS")}, t0)
+	second := sync(t, s, snap, []Line{line("APP-LAKE")}, t0.Add(time.Hour))
+	if second.New != 1 || second.Removed != 1 || !reflect.DeepEqual(first.Totals, second.Totals) {
+		t.Fatalf("report: %+v (first totals %v)", second, first.Totals)
 	}
 }
