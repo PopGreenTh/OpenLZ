@@ -106,5 +106,14 @@
     "flags": [
       "alias"
     ]
+  },
+  {
+    "id": 15,
+    "title": "NEW: untagged line, the account lives in one environment",
+    "project": "|PRJ-CRM|APP-LOY|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
+    "biz": "|BU-MKTG|CC-202|TEAM-SRE|PL-UNSPEC|CUST-UNSPEC|",
+    "flags": [
+      "acctenv"
+    ]
   }
 ]

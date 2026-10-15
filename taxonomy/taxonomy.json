@@ -117,6 +117,10 @@
     {"account": "444455556666", "app": "APP-GATEWAY"},
     {"account": "777788889999", "app": "APP-LAKE"}
   ],
+  "account_environments": [
+    {"account": "444455556666", "environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|"},
+    {"account": "777788889999", "environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"}
+  ],
   "environment_regions": [
     {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|", "region": "ap-southeast-1"},
     {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|", "region": "ap-southeast-1"},

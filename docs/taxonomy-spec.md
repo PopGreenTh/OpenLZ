@@ -66,6 +66,7 @@ can always be derived from a Project path.
 |---|---|---|
 | Project | LZ / Connection | A Project can run in several LZs; an LZ hosts many Projects |
 | App | Account | An App can use several Accounts; an Account can host several Apps (shared account) |
+| Environment | Account | A dedicated Account lives in one Environment (`account_environments`); it fixes the App too and is stronger evidence than the App link |
 | Environment | Region | Narrows an App to an Environment (weak evidence on its own) |
 | Feature, Function | — | No Cloud counterpart: reached only through ResourceGroup/Resource mappings |
 | (any level) | ResourceGroup / Resource | A Resource or ResourceGroup can be mapped to a Project path at any depth |
@@ -134,7 +135,7 @@ Each cost line is attributed to one Project path, and its Biz path is derived fr
 3. **Tag anchor.** Every valid Project path is scored against the line's tags; deeper levels weigh
    more (Project 1, App 2, Environment 4, Feature 8, Function 16), so **the deepest valid tag wins**.
    A wrong upper tag is corrected and the line is flagged `tag-corrected`.
-4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account, Region.
+4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account → Environment, Account → App, Region.
    Evidence that contradicts what is already known is **ignored and flagged**, never applied.
 5. **LZ** is used as a last resort, only when nothing more specific is known (an LZ hosts many
    Projects, so it must not settle an ambiguous shared Account).

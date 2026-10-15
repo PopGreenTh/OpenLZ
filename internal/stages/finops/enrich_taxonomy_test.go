@@ -210,6 +210,9 @@ func TestEnrichAttributesByTagsEvidenceAndPadding(t *testing.T) {
 		base("111122223333", "prod", "lambda", "", "Untagged", "APP-ORDERS"),
 		// Dedicated account: App from the account, Environment from the Region.
 		base("777788889999", "data", "glue", "", "Untagged", "Untagged"),
+		// Dedicated staging account, no tags, a region the taxonomy does not know: the account
+		// lives in one environment.
+		withRegion(base("444455556666", "stg", "cloudwatch", "", "Untagged", "Untagged"), "eu-west-1"),
 		// Resource override to ENV-STG of the gateway, whatever the tags say.
 		base("111122223333", "prod", "rds", "arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "PRJ-LAKEHOUSE", "APP-LAKE"),
 	})
@@ -231,7 +234,8 @@ func TestEnrichAttributesByTagsEvidenceAndPadding(t *testing.T) {
 	check("111122223333|s3", "|PRJ-PAYMENTS|APP-UNSPEC|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|", "account")
 	check("999999999999|sqs", "|PRJ-UNALLOC|APP-UNALLOC|ENV-UNALLOC|FEAT-UNALLOC|FUNC-UNALLOC|", "")
 	check("111122223333|lambda", "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|", "tags")
-	check("777788889999|glue", "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|", "region")
+	check("777788889999|glue", "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|", "acctenv")
+	check("444455556666|cloudwatch", "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|FEAT-UNSPEC|FUNC-UNSPEC|", "acctenv")
 	check("111122223333|arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|FEAT-UNSPEC|FUNC-UNSPEC|", "override")
 
 	// Biz path derives from the Project path.

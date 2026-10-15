@@ -289,6 +289,7 @@ func touchesChange(st *StoredLine, cat *taxonomy.Catalog, cs taxonomy.ChangeSet)
 	cand := []string{
 		"resource:" + r.ResourceID,
 		"account:" + r.AccountID, "account:" + co.Account.ID,
+		"acctenv:" + r.AccountID, "acctenv:" + co.Account.ID,
 		"connection:" + r.ConnectionID,
 		"region:" + r.Region, "region:" + co.Region.ID,
 		"rg:" + co.ResourceGroup.ID,

@@ -6,6 +6,7 @@ import "strings"
 const (
 	EvidenceOverride = "override" // Resource id → Project node (always wins)
 	EvidenceRG       = "rg"       // ResourceGroup code → Project node
+	EvidenceAcctEnv  = "acctenv"  // Account code → Environment node
 	EvidenceAccount  = "account"  // Account code → App node
 	EvidenceRegion   = "region"   // Region code → Environment node (weak)
 	EvidenceLZ       = "lz"       // LZ code → Project node (last resort)
@@ -47,6 +48,11 @@ func (c *Catalog) AttributionTables() ([]ProjectNode, []Evidence) {
 	for _, acc := range c.ordered[Accounts] {
 		for _, app := range acc.multi[Apps] {
 			add(EvidenceAccount, acc.id, app)
+		}
+	}
+	for _, acc := range c.ordered[Accounts] {
+		for _, env := range acc.multi[Environments] {
+			add(EvidenceAcctEnv, acc.id, env)
 		}
 	}
 	for _, env := range c.ordered[Environments] {

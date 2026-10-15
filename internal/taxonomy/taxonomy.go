@@ -553,9 +553,22 @@ func (c *Catalog) checkBiz() {
 	}
 }
 
-// checkCloud warns when an Account's LZ is not one of the LZs of the Projects it serves.
+// checkCloud warns when an Account's LZ is not one of the LZs of the Projects it serves, or
+// when its Environment belongs to an App the account is not linked to.
 func (c *Catalog) checkCloud() {
 	for _, acc := range c.ordered[Accounts] {
+		if len(acc.multi[Apps]) > 0 {
+			linked := map[*node]bool{}
+			for _, app := range acc.multi[Apps] {
+				linked[app] = true
+			}
+			for _, env := range acc.multi[Environments] {
+				if app := env.ref("app"); !linked[app] {
+					c.warnings = append(c.warnings, fmt.Sprintf(
+						"Account %q is linked to Environment %s but not to its App %q (%s)", acc.id, env.path, app.id, AppAccounts))
+				}
+			}
+		}
 		conn := acc.ref("connection")
 		lz := conn.ref("landing_zone")
 		if lz == nil {

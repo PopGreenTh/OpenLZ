@@ -404,3 +404,32 @@ func TestRestatedTagIsNewPlusRemoved(t *testing.T) {
 		t.Fatalf("report: %+v (first totals %v)", second, first.Totals)
 	}
 }
+
+// Linking an account to its environment re-attributes exactly that account's lines.
+func TestAccountEnvironmentLinkReattributesThatAccount(t *testing.T) {
+	s := openStore(t)
+	snap := sampleSnap(t)
+	// Start without the lake account's environment link.
+	rows := snap.Collections[taxonomy.AccountEnvironments]
+	var keep []taxonomy.Row
+	for _, r := range rows {
+		if r["account"] != "777788889999" {
+			keep = append(keep, r)
+		}
+	}
+	snap.Collections[taxonomy.AccountEnvironments] = keep
+	lines := mk(spec{"lake", "777788889999", "eu-west-1", "", "Untagged", "Untagged", 70})
+	sync(t, s, snap, lines, t0)
+	before := byKey(t, s)
+	if strings.Contains(before["lake|2026-09-20"].ProjectHash, "ENV-PROD") {
+		t.Fatalf("no environment link yet: %s", before["lake|2026-09-20"].ProjectHash)
+	}
+	snap.Add(taxonomy.AccountEnvironments, taxonomy.Row{"account": "777788889999", "environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"})
+	rep := sync(t, s, snap, lines, t0.Add(time.Hour))
+	if rep.Reattributed != 3 {
+		t.Fatalf("report: %+v", rep)
+	}
+	if l := byKey(t, s)["lake|2026-09-20"]; !strings.Contains(l.ProjectHash, "|APP-LAKE|ENV-PROD|") || !strings.Contains(l.Trail, "acctenv") {
+		t.Fatalf("after link: %+v", l)
+	}
+}

@@ -16,7 +16,7 @@
 //	0. Resource override: an explicit resource -> node mapping always wins.
 //	1. Tag anchor: every valid path is scored against the line's Project tags; deeper tags weigh
 //	   more (1,2,4,8,16), so the most specific tag wins and a stale upper tag is corrected and flagged.
-//	2. Evidence refines the anchor, most specific first: resource group, biz tag, account, region.
+//	2. Evidence refines the anchor, most specific first: resource group, biz tag, account's environment, account's app, region.
 //	   Evidence that contradicts what is already known is ignored and flagged ("name!"), never applied.
 //	3. LZ evidence is a last resort, used only when nothing else is known (an LZ hosts many projects).
 //	4. Common ancestor: a level survives only if every remaining candidate agrees on it.
@@ -96,6 +96,7 @@ func SQL() string {
 	steps := []struct{ name, cand string }{
 		{"rg", evidence("rg", "rg")},
 		{"biz", biz},
+		{"acctenv", evidence("acctenv", "account")},
 		{"account", evidence("account", "account")},
 		{"region", evidence("region", "region")},
 	}
@@ -208,12 +209,12 @@ func aggColumns() string {
 
 const tail = `c_lz AS ({LZ}),
 -- 3: LZ is a last resort: used only when nothing else is known.
-s5 AS (SELECT line_id, node_id FROM {LAST}
+slz AS (SELECT line_id, node_id FROM {LAST}
        UNION SELECT c.line_id, c.node_id FROM c_lz c WHERE NOT EXISTS (SELECT 1 FROM {LAST} s WHERE s.line_id = c.line_id)),
 -- 0: explicit resource override always wins.
 ov AS ({OV}),
 fs AS (SELECT line_id, node_id FROM ov
-       UNION SELECT s.line_id, s.node_id FROM s5 s WHERE NOT EXISTS (SELECT 1 FROM ov o WHERE o.line_id = s.line_id)),
+       UNION SELECT s.line_id, s.node_id FROM slz s WHERE NOT EXISTS (SELECT 1 FROM ov o WHERE o.line_id = s.line_id)),
 -- 4: common ancestor of the remaining candidates.
 agg AS (
   SELECT f.line_id,
@@ -249,6 +250,7 @@ SELECT f.line_id,
     CASE WHEN EXISTS (SELECT 1 FROM ov o WHERE o.line_id = f.line_id) THEN 'override ' ELSE '' END ||
     CASE WHEN EXISTS (SELECT 1 FROM s0 x WHERE x.line_id = f.line_id) THEN 'tags ' ELSE '' END ||
     (SELECT piece FROM t_rg t WHERE t.line_id = f.line_id) || (SELECT piece FROM t_biz t WHERE t.line_id = f.line_id) ||
+    (SELECT piece FROM t_acctenv t WHERE t.line_id = f.line_id) ||
     (SELECT piece FROM t_account t WHERE t.line_id = f.line_id) || (SELECT piece FROM t_region t WHERE t.line_id = f.line_id) ||
     CASE WHEN EXISTS (SELECT 1 FROM c_lz c WHERE c.line_id = f.line_id) AND NOT EXISTS (SELECT 1 FROM {LAST} s WHERE s.line_id = f.line_id) THEN 'lz ' ELSE '' END ||
     CASE WHEN (f.tp IS NOT NULL AND f.p_u IS NOT NULL AND f.tp <> f.p_u) OR (f.ta IS NOT NULL AND f.a_f IS NOT NULL AND f.ta <> f.a_f)
