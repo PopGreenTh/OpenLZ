@@ -43,6 +43,8 @@ const (
 	// Cloud <-> Project links (many-to-many junctions).
 	ProjectLZs          = "project_lzs"
 	AppOUs              = "app_ous"
+	AppAccounts         = "app_accounts"
+	EnvironmentRegions  = "environment_regions"
 	AccountEnvironments = "account_environments"
 
 	// Aliases map invalid tag values to the correct code (spec §3.3).
@@ -155,9 +157,10 @@ type CollectionSpec struct {
 //
 // Cloud ↔ Project (many-to-many, aligned levels):
 //
-//	Project ↔ LZ (project_lzs), App ↔ OU (app_ous: an OU, nested, hosts Apps; an Account's
-//	Apps come from the nearest OU above it that has links), Account ↔ Environment
-//	(account_environments: a dedicated Account lives in one Environment); a Resource or
+//	Project ↔ LZ (project_lzs), App ↔ OU (app_ous: an OU, nested, hosts Apps) and App ↔
+//	Account (app_accounts; an Account's own links win, else the nearest OU above it that has
+//	links), Account ↔ Environment (account_environments: a dedicated Account lives in one
+//	Environment), Environment ↔ Region (environment_regions, weak evidence); a Resource or
 //	ResourceGroup can be mapped to a Project path
 //	at any depth (attribute project_path, written as a path hash such as |PRJ|APP|ENV|)
 var Schema = []CollectionSpec{
@@ -240,10 +243,20 @@ var Schema = []CollectionSpec{
 			{Field: "ou", Target: OUs, Kind: RefMust},
 			{Field: "app", Target: Apps, Kind: RefMust},
 		}},
+	{Name: AppAccounts, Label: "App ↔ Account", Hierarchy: HierCloud, Junction: true,
+		Refs: []RefSpec{
+			{Field: "account", Target: Accounts, Kind: RefMust},
+			{Field: "app", Target: Apps, Kind: RefMust},
+		}},
 	{Name: AccountEnvironments, Label: "Account ↔ Environment", Hierarchy: HierCloud, Junction: true,
 		Refs: []RefSpec{
 			{Field: "account", Target: Accounts, Kind: RefMust},
 			{Field: "environment", Target: Environments, Kind: RefMust},
+		}},
+	{Name: EnvironmentRegions, Label: "Environment ↔ Region", Hierarchy: HierCloud, Junction: true,
+		Refs: []RefSpec{
+			{Field: "environment", Target: Environments, Kind: RefMust},
+			{Field: "region", Target: Regions, Kind: RefMust},
 		}},
 
 	// Alias: code is the invalid tag value, level says which tag it was found in, and target

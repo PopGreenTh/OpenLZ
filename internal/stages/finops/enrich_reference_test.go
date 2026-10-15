@@ -63,7 +63,8 @@ func referenceTaxonomy(t *testing.T, path string) {
 	add(taxonomy.AppOUs, "ou", "OU-DEDICATED", "app", "APP-CHK")
 	add(taxonomy.AppOUs, "ou", "OU-SHARED", "app", "APP-CHK")
 	add(taxonomy.AppOUs, "ou", "OU-SHARED", "app", "APP-LOY")
-	add(taxonomy.AccountEnvironments, "account", "ACC-111", "environment", "|PRJ-ECOM|APP-CHK|ENV-PROD|")
+	add(taxonomy.EnvironmentRegions, "environment", "|PRJ-ECOM|APP-CHK|ENV-PROD|", "region", "ap-southeast-1")
+	add(taxonomy.EnvironmentRegions, "environment", "|PRJ-CRM|APP-LOY|ENV-PROD|", "region", "ap-southeast-1")
 	if _, err := taxonomy.Build(snap); err != nil {
 		t.Fatalf("reference taxonomy: %v", err)
 	}
@@ -74,9 +75,6 @@ func referenceTaxonomy(t *testing.T, path string) {
 
 // Enrich sees two sensed tags (Project, App); the reference cases that need Environment,
 // Feature, Function or Biz tags cannot reach it and are covered by internal/attribution.
-// Region no longer decides an Environment (spec §3.2), so cases 7 and 13, which relied on it,
-// are adapted or left to the SQL tests: a dedicated account reaches its Environment through
-// account_environments, a shared one stops at the App its tag names.
 func TestReferenceCasesThroughEnrich(t *testing.T) {
 	type refCase struct {
 		ID      int      `json:"id"`
@@ -97,11 +95,6 @@ func TestReferenceCasesThroughEnrich(t *testing.T) {
 	for _, c := range cases {
 		want[c.ID] = c
 	}
-	// Case 7 reached ENV-PROD through the region link, which no longer exists.
-	c7 := want[7]
-	c7.Project = "|PRJ-CRM|APP-LOY|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|"
-	c7.Biz = "|BU-MKTG|CC-202|TEAM-UNSPEC|PL-UNSPEC|CUST-UNSPEC|"
-	want[7] = c7
 
 	// id → (account, region, resource, project tag, app tag)
 	type line struct{ account, region, resource, project, app string }
@@ -110,6 +103,7 @@ func TestReferenceCasesThroughEnrich(t *testing.T) {
 		8:  {"ACC-111", "ap-southeast-1", "", "", ""},
 		10: {"ACC-111", "ap-southeast-1", "arn:aws:rds:ap-southeast-1:111122223333:db:shared-pg", "PRJ-ECOM", "APP-CHK"},
 		12: {"ACC-SHARED-EKS", "ap-southeast-1", "", "", ""},
+		13: {"ACC-111", "us-east-1", "", "", ""},
 	}
 	var records []cloud.CostRecord
 	for id, l := range lines {

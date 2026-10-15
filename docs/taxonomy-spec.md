@@ -41,10 +41,11 @@ Biz                    Project                  Cloud
 BusinessUnit      ◄──  Project          ◄·····► LZ / Connection   (CSP, currency)
 CostCenter        ◄──  App              ◄·····► OU (nested)
 OwnerTeam         ◄··  Environment      ◄·····► Account / CSPAccount
-ProductLine       ◄··  Feature                  Region / Zone       (catalog, no attribution role)
+ProductLine       ◄··  Feature                  Region / Zone       (Region: weak Environment evidence)
 Customer          ◄··  Function                ServiceCat / Service
                                                 ServiceUsage / UsageType
                                                 ResourceGroup / Resource ····► Project path
+App ◄·· OU / Account (app_ous, app_accounts)   Environment ◄·· Account (strong), Region (weak)
 ──►  must ref     ··►  can ref      ◄·····►  many-to-many
 ```
 
@@ -69,8 +70,9 @@ can always be derived from a Project path.
 | Project level | Cloud level | Meaning |
 |---|---|---|
 | Project | LZ / Connection | A Project can run in several LZs; an LZ hosts many Projects |
-| App | OU | An OU hosts Apps (`app_ous`). An Account's Apps are those of the nearest OU above it that has links, so a deeper OU overrides its parents and an OU with several Apps is a shared-account case |
-| Environment | Account | A dedicated Account lives in one Environment (`account_environments`); it fixes the App too and is stronger evidence than the OU link |
+| App | OU / Account | An OU hosts Apps (`app_ous`); an Account can also be linked to Apps directly (`app_accounts`). An Account's own links win; otherwise the nearest OU above it that has links decides, so a deeper OU overrides its parents. Several Apps on one OU or Account is a shared-account case |
+| Environment | Account | A dedicated Account lives in one Environment (`account_environments`); it fixes the App too and is stronger evidence than the OU / Account → App link |
+| Environment | Region | Narrows an App to an Environment (`environment_regions`); weak evidence, applied last (see §6 on unsensed regions) |
 | Feature, Function | — | No Cloud counterpart: reached only through ResourceGroup/Resource mappings |
 | (any level) | ResourceGroup / Resource | A Resource or ResourceGroup can be mapped to a Project path at any depth |
 
@@ -139,7 +141,7 @@ Each cost line is attributed to one Project path, and its Biz path is derived fr
 3. **Tag anchor.** Every valid Project path is scored against the line's tags; deeper levels weigh
    more (Project 1, App 2, Environment 4, Feature 8, Function 16), so **the deepest valid tag wins**.
    A wrong upper tag is corrected and the line is flagged `tag-corrected`.
-4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account → Environment, Account's OU → Apps. Region and Zone have no attribution role (a cost row's region is the client's default when the group-by does not sense it).
+4. **Evidence refines the anchor**, most specific first: ResourceGroup, Biz tag, Account → Environment, Account → Apps (own links, else nearest OU), Region. Region is the weakest evidence; Zone has no attribution role. A cost row's region is the client's default when the group-by does not sense it, which makes Region unreliable for such runs (open point, §9).
    Evidence that contradicts what is already known is **ignored and flagged**, never applied.
 5. **LZ** is used as a last resort, only when nothing more specific is known (an LZ hosts many
    Projects, so it must not settle an ambiguous shared Account).
@@ -159,7 +161,7 @@ codes, so it cannot be a path that does not exist.
 | Shared account, one valid App tag | The App tag wins; the account's other App is dropped |
 | Shared account, untagged | Unallocated (LZ does not decide) |
 | Valid tags but ResourceGroup maps to another App | Tags kept; ResourceGroup ignored and flagged |
-| Dedicated account, no tags | App and Environment from the account's Environment link, rest `UNSPEC` |
+| Dedicated account, no tags | App and Environment from the account's Environment link, else App from the account / OU and Environment from the Region, rest `UNSPEC` |
 | Resource override | The override path, whatever the tags say |
 
 ## 7. Currency
@@ -233,3 +235,5 @@ earlier result so a report can show "as reported then" next to "as restated now"
   `input_hash` leaves out the resource group (it comes from the taxonomy, so a change to it is a mapping delta).
 - **REMOVED** applies only inside the date window of the incoming data: a stored line with a date between the
   earliest and latest incoming date that is no longer present is marked inactive (kept for history).
+
+- **Unsensed region (open):** when the group-by does not include REGION the raw `region` is the client's default, so Region evidence can mislead. Candidate fix: record whether the region was sensed and ignore it otherwise. Not built.

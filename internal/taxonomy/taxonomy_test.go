@@ -691,3 +691,38 @@ func TestDiffClassifiesChanges(t *testing.T) {
 		t.Fatalf("alias: %+v", cs)
 	}
 }
+
+func TestAccountOwnLinksWinOverItsOUs(t *testing.T) {
+	cat, err := buildJSON(t, `{`+minimal+`,`+ouTree+`,
+	  "accounts": [
+	    {"code": "inherits", "name": "inherits", "ou": "OU-LEAF"},
+	    {"code": "explicit", "name": "explicit", "ou": "OU-LEAF"}],
+	  "app_ous": [{"ou": "OU-ROOT", "app": "A1"}],
+	  "app_accounts": [{"account": "explicit", "app": "A2"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := func(code string) string {
+		var out []string
+		for _, n := range accountApps(cat.lookup(Accounts, code)) {
+			out = append(out, n.id)
+		}
+		return strings.Join(out, ",")
+	}
+	if ids("inherits") != "A1" || ids("explicit") != "A2" {
+		t.Fatalf("inherits=%q explicit=%q", ids("inherits"), ids("explicit"))
+	}
+}
+
+func TestRegionIsWeakEvidenceForEnvironments(t *testing.T) {
+	_, ev := sampleCatalog(t).AttributionTables()
+	regions := 0
+	for _, e := range ev {
+		if e.Kind == EvidenceRegion {
+			regions++
+		}
+	}
+	if regions != 4 {
+		t.Fatalf("region evidence rows: %d", regions)
+	}
+}

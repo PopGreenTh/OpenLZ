@@ -121,9 +121,18 @@
     {"ou": "OU-PAYMENTS", "app": "APP-ORDERS"},
     {"ou": "OU-DATA", "app": "APP-LAKE"}
   ],
+  "app_accounts": [
+    {"account": "444455556666", "app": "APP-GATEWAY"}
+  ],
   "account_environments": [
     {"account": "444455556666", "environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|"},
     {"account": "777788889999", "environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|"}
+  ],
+  "environment_regions": [
+    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|", "region": "ap-southeast-1"},
+    {"environment": "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|", "region": "ap-southeast-1"}
   ],
   "aliases": [
     {"code": "PaymentGateway", "name": "Mock tag without the APP- prefix", "level": "app", "target": "|PRJ-PAYMENTS|APP-GATEWAY|"},

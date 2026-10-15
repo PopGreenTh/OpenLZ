@@ -233,14 +233,14 @@ func TestEnrichAttributesByTagsEvidenceAndPadding(t *testing.T) {
 	check("111122223333|i-0111122223333a001", "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|FEAT-CARD|FUNC-UNSPEC|", "rg")
 	check("111122223333|s3", "|PRJ-PAYMENTS|APP-UNSPEC|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|", "account")
 	check("999999999999|sqs", "|PRJ-UNALLOC|APP-UNALLOC|ENV-UNALLOC|FEAT-UNALLOC|FUNC-UNALLOC|", "")
-	check("111122223333|lambda", "|PRJ-PAYMENTS|APP-ORDERS|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|", "tags")
+	check("111122223333|lambda", "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|", "tags")
 	check("777788889999|glue", "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|", "acctenv")
 	check("444455556666|cloudwatch", "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|FEAT-UNSPEC|FUNC-UNSPEC|", "acctenv")
 	check("111122223333|arn:aws:rds:ap-southeast-1:111122223333:db:inventory", "|PRJ-PAYMENTS|APP-GATEWAY|ENV-STG|FEAT-UNSPEC|FUNC-UNSPEC|", "override")
 
 	// Biz path derives from the Project path.
-	if r := got["111122223333|lambda"]; r.BusinessUnitID != "BU-DIGITAL" || r.CostCenterID != "CC-PAY" || r.OwnerTeamID != "TEAM-UNSPEC" ||
-		r.ProductLineID != "PL-UNSPEC" || r.CustomerID != "CUST-UNSPEC" || r.OwnerID != "TEAM-UNSPEC" {
+	if r := got["111122223333|lambda"]; r.BusinessUnitID != "BU-DIGITAL" || r.CostCenterID != "CC-PAY" || r.OwnerTeamID != "TEAM-PAY" ||
+		r.ProductLineID != "PL-UNSPEC" || r.CustomerID != "CUST-UNSPEC" || r.OwnerID != "TEAM-PAY" {
 		t.Errorf("biz path of lambda: %+v", r)
 	}
 	if r := got["999999999999|sqs"]; r.BusinessUnitID != "BU-UNALLOC" || r.ProjectID != "PRJ-UNALLOC" || r.Project != "Unallocated" {

@@ -271,9 +271,13 @@ func ouLZ(ou *node) *node {
 	return ou.ref("landing_zone")
 }
 
-// accountApps returns the Apps an Account hosts through its OUs: the links of the nearest OU
-// above it (its own OU first) that has any, so a more specific OU overrides its parents.
+// accountApps returns the Apps an Account hosts: its own app_accounts links when it has any,
+// else the links of the nearest OU above it (its own OU first) that has any, so the most
+// specific link wins.
 func accountApps(acc *node) []*node {
+	if apps := acc.multi[Apps]; len(apps) > 0 {
+		return apps
+	}
 	for ou := acc.ref("ou"); ou != nil; ou = ou.ref("parent") {
 		if apps := ou.multi[Apps]; len(apps) > 0 {
 			return apps

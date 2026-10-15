@@ -102,7 +102,7 @@ func TestFirstRunAttributesEveryLine(t *testing.T) {
 	got := byKey(t, s)
 	want := map[string]string{
 		"ec2":     "|PRJ-PAYMENTS|APP-GATEWAY|ENV-PROD|FEAT-CARD|FUNC-UNSPEC|",
-		"orders":  "|PRJ-PAYMENTS|APP-ORDERS|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
+		"orders":  "|PRJ-PAYMENTS|APP-ORDERS|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"shared":  "|PRJ-PAYMENTS|APP-UNSPEC|ENV-UNSPEC|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"lake":    "|PRJ-LAKEHOUSE|APP-LAKE|ENV-PROD|FEAT-UNSPEC|FUNC-UNSPEC|",
 		"mystery": "|PRJ-UNALLOC|APP-UNALLOC|ENV-UNALLOC|FEAT-UNALLOC|FUNC-UNALLOC|",
@@ -161,7 +161,7 @@ func TestResourceOverrideChangeReattributesExactlyThatResource(t *testing.T) {
 
 	// Adding evidence also re-resolves the lines that are unresolved (they may improve), but
 	// only the 3 periods of the resource change.
-	if rep.Selected != 12 || rep.Reattributed != 3 || rep.New != 0 {
+	if rep.Selected != 9 || rep.Reattributed != 3 || rep.New != 0 {
 		t.Fatalf("exactly the 3 periods of the resource change: %+v", rep)
 	}
 	after := byKey(t, s)

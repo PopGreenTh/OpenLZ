@@ -127,7 +127,7 @@ func Diff(oldSnap, newSnap *Snapshot) (ChangeSet, error) {
 	}
 
 	// Cloud rows that decide a line's inputs, and the alias table.
-	for coll, prefix := range map[string]string{Resources: "resource", Accounts: "account", Connections: "connection"} {
+	for coll, prefix := range map[string]string{Resources: "resource", Accounts: "account", Connections: "connection", Regions: "region"} {
 		changedRows(oldSnap, newSnap, coll, func(code string) { cs.Keys[prefix+":"+code] = struct{}{} })
 	}
 	changedRows(oldSnap, newSnap, Aliases, func(code string) { cs.Keys["alias:"+code] = struct{}{} })
