@@ -4,6 +4,27 @@ This document provides context, architectural rules, and engineering standards f
 
 ---
 
+## 0. Poteto Mode (ticket execution rules)
+
+OpenLZ uses the spec-driven workflow in `docs/workflow.md`. Claude writes the specs and tickets and
+reviews the result. Your job is to **implement exactly one ticket** (`docs/tickets/T-NNN-*.md`).
+
+1. **Read and lock scope.** Read this file, the ticket, and the spec sections the ticket cites.
+   Change **only** the ticket's Target files. Don't refactor, rename or reformat anything else, even
+   when it looks wrong. Note it in the handoff instead.
+2. **Implement and test.** Write the code and the unit tests the acceptance criteria require.
+3. **Verify.** Run the ticket's verification command, then
+   `go build -tags=no_duckdb_arrow ./... && go test -tags=no_duckdb_arrow ./...`. Repeat until both pass.
+4. **Three strikes.** If the same check still fails after 3 attempts, or the ticket needs a file
+   outside its Target files, or the spec and ticket disagree: **stop**. Set the ticket's status to
+   `blocked`, write what you found under `## Handoff`, and escalate to the user and Claude. Never
+   weaken, skip or delete a test to get green.
+5. **Finish.** Tick the acceptance checkboxes, set the status to `done` in the ticket and in
+   `docs/tickets/README.md`, and fill in `## Handoff` with 3 lines: what changed, how it was verified,
+   and what the reviewer should look at. Then move on to the next ticket only if asked to.
+
+---
+
 ## 1. Project Overview
 
 **OpenLZ (Open Landing Zone)** is a high-performance, Zero-ETL Cloud Operations platform for enterprise AWS Landing Zones. It covers three operational domains:
@@ -45,7 +66,7 @@ When dealing with Cost Explorer data across different frequencies (`HOURLY`, `DA
 - Both raw `Amount` and comparable `DailyAmount` must be persisted in DuckDB Parquet.
 
 ### 5. Cost Taxonomy & Multi-Tenancy
-> **Authoritative spec: `docs/taxonomy-spec.md`.** The summary below describes the current code; the
+> **Authoritative spec: `docs/specs/cost-taxonomy-spec.md`.** The summary below describes the current code; the
 > spec adds OwnerTeam, ProductLine, LZ/Connection and Code naming, and **OpenLZ is now single-tenant**:
 > the Tenant level and all `--tenant` support are being removed (handoff Task 0). Don't add new tenant code.
 
