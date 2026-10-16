@@ -6,7 +6,7 @@
 > Shareable pages: [Cost Hierarchy Taxonomy](https://claude.ai/artifact/DPKHjS5xmot6cWeiQzgFyu) (spec with diagram) ·
 > [Taxonomy v2 Handoff](https://claude.ai/artifact/TcFmz4hvhFjzzgTHxkXU9Q) (this document).
 
-> **v3 supersedes the model in §1, §2 and Task 0 (2026-10-14).** `docs/taxonomy-spec.md` now defines
+> **v3 supersedes the model in §1, §2 and Task 0 (2026-10-14).** `docs/specs/cost-taxonomy-spec.md` now defines
 > **three hierarchies** (Biz, Project, Cloud) and the CloudValueDelta update mechanism. The code in
 > `internal/taxonomy` still implements v2. Do **Task 0v3** (below) instead of the model-specific parts of
 > Task 0; the parts of Task 0 that still apply are single tenant (item 3), Code naming (item 4) and
@@ -32,7 +32,7 @@
 
 ## 1. The business model (what the user specified)
 
-> **`docs/taxonomy-spec.md` is the authoritative spec** (agreed 2026-10-14). If this section or the
+> **`docs/specs/cost-taxonomy-spec.md` is the authoritative spec** (agreed 2026-10-14). If this section or the
 > code disagrees with it, the spec wins. Task 0 below lists where the code currently differs.
 
 ```
@@ -144,7 +144,7 @@ rm -rf data                        # data/ is gitignored, but keep the tree clea
 ## 4. Remaining tasks (do them in order)
 
 ### Task 0v3: Move the taxonomy model to the three hierarchies  ★ do first
-Source of truth: `docs/taxonomy-spec.md` §2–§5. Work in `internal/taxonomy/schema.go` (`Schema`) first; Directus bootstrap, pull, push and validation then follow from it (ground rule 3).
+Source of truth: `docs/specs/cost-taxonomy-spec.md` §2–§5. Work in `internal/taxonomy/schema.go` (`Schema`) first; Directus bootstrap, pull, push and validation then follow from it (ground rule 3).
 1. **Biz hierarchy:** BusinessUnit → CostCenter → OwnerTeam → ProductLine → Customer. Rename `owners` → `owner_teams`; rename `customer_funcs` → `customers`; add `product_lines` (parent `owner_teams`).
 2. **Project hierarchy:** Project → App → Environment → Feature → Function. Remove the `app_environments` junction; `environments.app` becomes RefParent. Add `features` and `functions`. Refs: Project *must* BusinessUnit; App *must* CostCenter; Environment *can* OwnerTeam; Feature *can* ProductLine; Function *can* Customer. Environment, Feature and Function codes are unique within their parent.
 3. **Cloud hierarchy:** LZ/Connection (attrs `csp`, `currency`, both required; `CSPChoices` defined once) → Account/CSPAccount → Region/Zone (`regions.csp` optional attr; region unique within its CSP, zone within its region) → ServiceCat/Service → ServiceUsage/UsageType → ResourceGroup/Resource. Remove the `csps` collection. Add `Attrs []AttrSpec{Field, Required, Choices}` to `CollectionSpec`.
@@ -346,7 +346,7 @@ Today the enriched Excel sheet (`internal/report/excel.go` `AddEnrichedSheet`, 1
 
 ## 5. Product decisions (answered 2026-10-14)
 - **Spec v3 (2026-10-14):** three hierarchies (Biz, Project, Cloud) with Environment under App, aligned Cloud↔Project links and CloudValueDelta restating all periods (confirmed "Yes all"). Supersedes the bullets below where they differ.
-- **Spec v2 (2026-10-14):** see `docs/taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
+- **Spec v2 (2026-10-14):** see `docs/specs/cost-taxonomy-spec.md`. It adds OwnerTeam (renamed Owner), ProductLine (can ref App) and Code naming.
 - **Single tenant (2026-10-14):** OpenLZ supports one tenant. The Tenant level, the shared-catalog split and all `--tenant` support are removed (Task 0 item 3).
 - **Region / Zone (2026-10-14):** Region becomes the pair Region/Zone; Zone can be mapped to Region (Task 0 item 7).
 - **CSP and LZ / Connection (2026-10-14):** each LZ has exactly one CSP, so **CSP is an attribute of the LZ** (and of Region), not a level; Region stays below Account. Account maps to its billing Connection; Environment is under an LZ; **one billing currency per LZ** (Task 0 item 6).
