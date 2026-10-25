@@ -1,0 +1,36 @@
+name: ou-by-id-and-stale-references
+why: >
+  OU links may use the OU ID instead of a path, and a rule is reported by path either way.
+  A link to an OU that no longer exists and an account entry for an account that is not
+  discovered are both ignored and flagged, never fatal.
+inventory:
+  organizations:
+    - id: o-case11
+      management_account: "111111111111"
+      root_id: r-c011
+      ous:
+        - { id: ou-c011-chk00001, name: Checkout, parent_id: r-c011 }
+        - { id: ou-c011-chkp0001, name: Prod,     parent_id: ou-c011-chk00001 }
+      accounts:
+        - { id: "111111111101", name: chk-prod, status: SUSPENDED, parent_id: ou-c011-chkp0001 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers: [{ code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }]
+  projects: [{ code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL }]
+  apps:
+    - { code: APP-CHK, name: Checkout, project: PRJ-SHOP, cost_center: CC-ECOM,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  ou_links:
+    - { ou: ou-c011-chk00001, app: APP-CHK }
+    - { ou: ou-c011-chkp0001, environment: ENV-PROD }
+    - { ou: /Retired, app: APP-CHK }
+  accounts:
+    - { account: "111111111199", environment: ENV-PROD, apps: [{ app: APP-CHK }] }
+expect:
+  allocations:
+    - { account_id: "111111111101", app: APP-CHK, environment: ENV-PROD,
+        app_rule: "ou:/Checkout", environment_rule: "ou:/Checkout/Prod" }
+  findings:
+    - { code: ou-not-found, subject: /Retired }
+    - { code: account-not-discovered, subject: "111111111199" }

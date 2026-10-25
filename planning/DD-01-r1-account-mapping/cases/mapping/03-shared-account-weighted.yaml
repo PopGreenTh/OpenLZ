@@ -1,0 +1,44 @@
+name: shared-account-weighted
+why: >
+  One account serves two Apps of different Projects (D-005). Its single Environment must exist
+  under both Apps. Shares follow the weights (Q-001 proposal). The Data Project is not linked to
+  this LZ, which is flagged but does not change the allocation.
+inventory:
+  organizations:
+    - id: o-case03
+      management_account: "111111111111"
+      root_id: r-c003
+      ous:
+        - { id: ou-c003-shrd0001, name: Shared, parent_id: r-c003 }
+      accounts:
+        - { id: "333333333301", name: shared-prod, status: ACTIVE, parent_id: ou-c003-shrd0001 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers:
+    - { code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }
+    - { code: CC-DATA, name: Data, business_unit: BU-RETAIL }
+  projects:
+    - { code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL, lzs: [LZ-MAIN] }
+    - { code: PRJ-DATA, name: Data platform, business_unit: BU-RETAIL, lzs: [LZ-OTHER] }
+  apps:
+    - { code: APP-CHK, name: Checkout, project: PRJ-SHOP, cost_center: CC-ECOM,
+        environments: [{ code: ENV-PROD, name: Production }] }
+    - { code: APP-LAKE, name: Data lake, project: PRJ-DATA, cost_center: CC-DATA,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs:
+    - { code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }
+    - { code: LZ-OTHER, name: Other, csp: AWS, currency: USD, management_account: "999999999999" }
+  accounts:
+    - account: "333333333301"
+      environment: ENV-PROD
+      apps:
+        - { app: APP-LAKE, weight: 30 }
+        - { app: APP-CHK, weight: 70 }
+expect:
+  allocations:
+    - { account_id: "333333333301", project: PRJ-SHOP, app: APP-CHK, environment: ENV-PROD,
+        cost_center: CC-ECOM, share: 0.7, share_rule: weighted, app_rule: account, environment_rule: account }
+    - { account_id: "333333333301", project: PRJ-DATA, app: APP-LAKE, environment: ENV-PROD,
+        cost_center: CC-DATA, share: 0.3, share_rule: weighted, app_rule: account, environment_rule: account }
+  findings:
+    - { code: project-lz-unlinked, subject: "333333333301/PRJ-DATA" }

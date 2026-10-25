@@ -1,0 +1,35 @@
+name: closed-account-and-currency
+why: >
+  Cost Explorer still reports a closed account that discovery no longer sees: its cost goes whole
+  to UNALLOC, never dropped. A row billed in a currency other than the LZ's keeps its own currency
+  and is flagged, never converted.
+inventory:
+  organizations:
+    - id: o-cost02
+      management_account: "111111111111"
+      root_id: r-k002
+      ous: []
+      accounts:
+        - { id: "300000000001", name: app, status: ACTIVE, parent_id: r-k002 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers: [{ code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }]
+  projects: [{ code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL }]
+  apps:
+    - { code: APP-A, name: A, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  accounts:
+    - { account: "300000000001", environment: ENV-PROD, apps: [{ app: APP-A }] }
+cost:
+  - { lz: LZ-MAIN, account_id: "300000000001", month: "2026-08", metric: UnblendedCost, amount: 40.00, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "300000000099", month: "2026-08", metric: UnblendedCost, amount: 12.50, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "300000000001", month: "2026-09", metric: UnblendedCost, amount: 900.00, currency: THB, estimated: true }
+expect:
+  allocated:
+    - { account_id: "300000000001", month: "2026-08", project: PRJ-SHOP, app: APP-A, environment: ENV-PROD, amount: 40.00, currency: USD }
+    - { account_id: "300000000099", month: "2026-08", project: PRJ-UNALLOC, app: APP-UNALLOC, environment: ENV-UNALLOC,
+        app_rule: unalloc, amount: 12.50, currency: USD }
+    - { account_id: "300000000001", month: "2026-09", app: APP-A, amount: 900.00, currency: THB, estimated: true }
+  findings:
+    - { code: account-not-in-inventory, subject: "300000000099" }
+    - { code: currency-mismatch, subject: LZ-MAIN/2026-09 }

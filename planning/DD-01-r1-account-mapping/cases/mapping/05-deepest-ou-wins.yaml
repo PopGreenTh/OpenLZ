@@ -1,0 +1,39 @@
+name: deepest-ou-wins
+why: >
+  App links are inherited down nested OUs and the deepest one decides. /Workloads links a
+  catch-all platform App; /Workloads/Checkout overrides it for accounts below it. An account
+  directly in /Workloads/Sandbox (no App link of its own) inherits the platform App.
+inventory:
+  organizations:
+    - id: o-case05
+      management_account: "111111111111"
+      root_id: r-c005
+      ous:
+        - { id: ou-c005-chk00001, name: Checkout, parent_id: ou-c005-wkld0001 }
+        - { id: ou-c005-chkp0001, name: Prod,     parent_id: ou-c005-chk00001 }
+        - { id: ou-c005-sbx00001, name: Sandbox,  parent_id: ou-c005-wkld0001 }
+        - { id: ou-c005-wkld0001, name: Workloads, parent_id: r-c005 }
+      accounts:
+        - { id: "555555555501", name: chk-prod, status: ACTIVE, parent_id: ou-c005-chkp0001 }
+        - { id: "555555555502", name: sandbox,  status: ACTIVE, parent_id: ou-c005-sbx00001 }
+taxonomy:
+  business_units: [{ code: BU-IT, name: IT }]
+  cost_centers: [{ code: CC-PLAT, name: Platform, business_unit: BU-IT }]
+  projects: [{ code: PRJ-CORE, name: Core, business_unit: BU-IT }]
+  apps:
+    - { code: APP-PLATFORM, name: Platform, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }, { code: ENV-SANDBOX, name: Sandbox }] }
+    - { code: APP-CHK, name: Checkout, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  ou_links:
+    - { ou: /Workloads, app: APP-PLATFORM, environment: ENV-SANDBOX }
+    - { ou: /Workloads/Checkout, app: APP-CHK }
+    - { ou: /Workloads/Checkout/Prod, environment: ENV-PROD }
+expect:
+  allocations:
+    - { account_id: "555555555501", app: APP-CHK, environment: ENV-PROD,
+        app_rule: "ou:/Workloads/Checkout", environment_rule: "ou:/Workloads/Checkout/Prod" }
+    - { account_id: "555555555502", app: APP-PLATFORM, environment: ENV-SANDBOX,
+        app_rule: "ou:/Workloads", environment_rule: "ou:/Workloads" }
+  findings: []
