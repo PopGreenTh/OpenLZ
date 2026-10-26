@@ -32,6 +32,18 @@ go build -tags=no_duckdb_arrow -o openlz .
 ./openlz version
 ```
 
+### Taxonomy Commands
+
+Validate taxonomy YAML files (offline, exits 1 on any error):
+```bash
+./openlz taxonomy validate [--dir taxonomy/]
+```
+
+Inspect the Project › App › Environment hierarchy tree:
+```bash
+./openlz taxonomy list [--dir taxonomy/]
+```
+
 ### Verification and Checks
 
 All builds, vetting, code formatting, and tests are verified via the check script:
