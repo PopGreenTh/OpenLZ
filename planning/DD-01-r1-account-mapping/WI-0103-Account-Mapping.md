@@ -132,15 +132,18 @@ management account; the resolver must not require it.
 ## WO-0103-A — Account resolver
 
 **Assignee:** open
-**Depends on:** WO-0101-B. Runs alongside WO-0102-A; if WO-0102-A has not merged, this Work Order
-reads the inventory through the WI-0102 contract and adds the inventory types only if they don't
-exist yet, coordinating on the issue.
-**Packages:** `internal/mapping`, `cmd/map*.go`
+**Depends on:** WO-0101-B. Built in parallel with WO-0102-A, and **merges after it**.
+**Packages:** `internal/mapping`, `cmd/map*.go`. Never `internal/inventory` (WO-0102-A owns it).
 
 **Goal.** Implement *Resolution* and the account map file, proven by every reference case.
 
 **In scope.**
 - The resolver, the findings, and the account map writer and reader.
+- The resolver reads the inventory through an **interface defined in `internal/mapping`** with only
+  the lookups it needs (the organizations, each account's OU chain from the root, an OU by ID and by
+  path, whether an OU has child OUs). The reference-case test feeds it from the case's `inventory:`
+  block; `openlz map` feeds it from `internal/inventory` (WO-0102-A). If WO-0102-A has not merged
+  when this PR is ready, it waits for that merge, then merges `main` in and wires `openlz map`.
 - `openlz map [--taxonomy taxonomy/] [--inventory data/inventory.json] [--out data/account_map.json]`:
   validates the taxonomy first (stops on errors), resolves, writes the file, and prints one line per
   allocation (LZ, OU path, account, Project › App › Environment, share, rules) and the findings.
