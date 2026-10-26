@@ -94,6 +94,15 @@ Environment").
   tag only from activation onward, never for earlier spend.
 - Defaults for the rest are in [Q-002](#q-002) until the repo owner confirms them.
 
+## D-009
+
+**Work Orders are `open` by default** (repo owner, 2026-10-26).
+
+- A Work Order and its dispatch issue carry `Assignee: open` unless Claude or the repo owner
+  really needs a specific implementer for it; then the reason is written next to the name.
+- An `open` issue names no agent and addresses none; the first implementer to claim it takes it.
+- Supersedes the "proposed assignees" in the DD-01 plan; `WO-0101-A` (#5) was re-dispatched open.
+
 ## Q-002
 
 **Open, not blocking: defaults applied until answered.** Edge cases of the App-tag split (D-008):

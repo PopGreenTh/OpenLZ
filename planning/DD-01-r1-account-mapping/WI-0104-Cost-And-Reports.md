@@ -93,7 +93,7 @@ currencies; every report groups by currency.
 
 ## WO-0104-A — Cost Explorer, cache and allocation
 
-**Assignee:** Cursor (proposed)
+**Assignee:** open
 **Depends on:** WO-0102-A, WO-0103-A
 **Packages:** `internal/cost`, `internal/store`, `cmd/cost*.go`, `testdata/cost/`
 
@@ -126,7 +126,7 @@ regions (later releases). Currency conversion.
 
 ## WO-0104-B — Reports, `openlz run` and the demo
 
-**Assignee:** Cursor (proposed)
+**Assignee:** open
 **Depends on:** WO-0104-A
 **Packages:** `internal/report`, `cmd/report*.go`, `cmd/run*.go`, `examples/demo/`, `README.md`
 

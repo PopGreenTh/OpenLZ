@@ -134,7 +134,7 @@ WI-0103.
 
 ## WO-0101-A — Skeleton, check script and CI
 
-**Assignee:** Cursor (proposed)
+**Assignee:** open
 **Depends on:** the repo owner has pushed tag `v1-reference` on `main`
 **Packages:** repo root, `cmd/`, `scripts/`, `.github/workflows/`, `.gitignore`, `README.md`
 
@@ -169,7 +169,7 @@ dependency (WO-0104-A).
 
 ## WO-0101-B — Taxonomy model, YAML loader and validation
 
-**Assignee:** Antigravity (proposed)
+**Assignee:** open
 **Depends on:** WO-0101-A
 **Packages:** `internal/taxonomy`, `cmd/taxonomy*.go`, `taxonomy/`
 
