@@ -12,7 +12,7 @@ Work is currently underway on **DD-01: Release 1 (Account Mapping)**:
 - Allocates monthly AWS Cost Explorer spend across mapped accounts, splitting shared-account spend by App tag ([D-008](planning/DECISIONS.md#d-008)).
 - Produces rollup reports, unmapped spend coverage reports, and actionable findings.
 
-Current state: foundations, repo skeleton, and CI check script (WI-0101).
+Current state: taxonomy validation (WI-0101-B) and AWS Organization inventory discovery with mock demo (WI-0102-A in progress).
 
 ## Building and Running
 
@@ -31,6 +31,30 @@ go build -tags=no_duckdb_arrow -o openlz .
 ```bash
 ./openlz version
 ```
+
+### Inventory Commands
+
+Collect organization inventory from the demo fixture (offline):
+```bash
+./openlz inventory sense --mock [--out data/inventory.json]
+```
+
+Collect from a live AWS Organization (read-only; requires credentials):
+```bash
+./openlz inventory sense [--profile PROFILE] [--region us-east-1] [--out data/inventory.json]
+```
+
+Print the OU tree and accounts:
+```bash
+./openlz inventory show [--in data/inventory.json]
+```
+
+Live discovery uses these IAM actions on the management account (or a delegated administrator):
+
+- `organizations:DescribeOrganization`
+- `organizations:ListRoots`
+- `organizations:ListOrganizationalUnitsForParent`
+- `organizations:ListAccountsForParent`
 
 ### Taxonomy Commands
 
