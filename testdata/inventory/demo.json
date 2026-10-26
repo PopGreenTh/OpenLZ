@@ -1,0 +1,87 @@
+{
+  "collected_at": "2026-10-25T08:00:00Z",
+  "source": "mock",
+  "organizations": [
+    {
+      "id": "o-demo0001",
+      "management_account": "111111111111",
+      "root_id": "r-demo",
+      "ous": [
+        { "id": "ou-demo-chk", "name": "Checkout", "parent_id": "ou-demo-wkld" },
+        { "id": "ou-demo-chknp", "name": "NonProd", "parent_id": "ou-demo-chk" },
+        { "id": "ou-demo-chkp", "name": "Prod", "parent_id": "ou-demo-chk" },
+        { "id": "ou-demo-pay", "name": "Payments", "parent_id": "ou-demo-wkld" },
+        { "id": "ou-demo-paynp", "name": "NonProd", "parent_id": "ou-demo-pay" },
+        { "id": "ou-demo-payp", "name": "Prod", "parent_id": "ou-demo-pay" },
+        { "id": "ou-demo-sec", "name": "Security", "parent_id": "r-demo" },
+        { "id": "ou-demo-shrd", "name": "Shared", "parent_id": "r-demo" },
+        { "id": "ou-demo-wkld", "name": "Workloads", "parent_id": "r-demo" }
+      ],
+      "accounts": [
+        {
+          "id": "111111111111",
+          "name": "management",
+          "email": "mgmt@example.com",
+          "status": "ACTIVE",
+          "parent_id": "r-demo"
+        },
+        {
+          "id": "222222222201",
+          "name": "sandbox",
+          "email": "sandbox@example.com",
+          "status": "ACTIVE",
+          "parent_id": "r-demo"
+        },
+        {
+          "id": "333333333301",
+          "name": "sec-audit",
+          "email": "audit@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-sec"
+        },
+        {
+          "id": "333333333302",
+          "name": "sec-log",
+          "email": "log@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-sec"
+        },
+        {
+          "id": "444444444401",
+          "name": "chk-nonprod",
+          "email": "chk-np@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-chknp"
+        },
+        {
+          "id": "444444444402",
+          "name": "chk-prod",
+          "email": "chk-prod@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-chkp"
+        },
+        {
+          "id": "555555555501",
+          "name": "pay-nonprod",
+          "email": "pay-np@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-paynp"
+        },
+        {
+          "id": "555555555502",
+          "name": "pay-prod",
+          "email": "pay-prod@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-payp"
+        },
+        {
+          "id": "666666666601",
+          "name": "shared-services",
+          "email": "shared@example.com",
+          "status": "ACTIVE",
+          "parent_id": "ou-demo-shrd"
+        }
+      ]
+    }
+  ]
+}
