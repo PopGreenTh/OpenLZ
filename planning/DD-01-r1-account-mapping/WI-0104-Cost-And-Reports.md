@@ -51,12 +51,16 @@ For each raw row, the account's allocations are taken from the account map (WI-0
 
 - An account with one allocation (`share_rule` `single`, or any system node) takes the row
   whole, whatever its `app_tag`.
-- An account whose allocations have `share_rule` `tag` (a shared account, D-008): a row whose
-  `app_tag` equals the code of one of those Apps goes whole to that App's allocation. Otherwise
-  it goes to `APP-UNALLOC` (Project, BusinessUnit and CostCenter `UNALLOC`) under the account's
-  Environment, with `app_rule` `unalloc`, and finding `shared-untagged` (subject
-  `<account ID>/<month>`) when `app_tag` is empty, or `shared-tag-invalid` (subject
-  `<account ID>/<tag value>`) when it isn't. These two are the Q-002 defaults.
+- An account whose allocations have `share_rule` `tag` (a shared account, D-008):
+  - a row whose `app_tag` equals the code of one of those Apps goes whole to that App's
+    allocation;
+  - a row with an empty `app_tag` goes to `APP-UNALLOC`, `app_rule` `unalloc`, finding
+    `shared-untagged` (subject `<account ID>/<month>`) — the Q-002 item 1 default;
+  - any other `app_tag` goes to `APP-INVALID`, `app_rule` `invalid` (D-010), with finding
+    `shared-tag-wrong-app` when the value is a real App code the account doesn't serve, or
+    `shared-tag-unknown` when it is no App at all (subject `<account ID>/<tag value>`);
+  - in both fallbacks the Environment is the account's, and Project, BusinessUnit and CostCenter
+    are `PRJ-UNALLOC`, `BU-UNALLOC`, `CC-UNALLOC`.
 - No row is ever divided, so every row lands whole in exactly one place.
 - An account in the cost data but not in the account map (for example a closed account) is
   allocated whole to `PRJ-UNALLOC › APP-UNALLOC › ENV-UNALLOC` under its row's LZ, with finding
@@ -83,7 +87,7 @@ currencies; every report groups by currency.
 | Report | Shows |
 |---|---|
 | `rollup` | Month × BusinessUnit › Project › App › Environment, with subtotals per Project and BusinessUnit |
-| `coverage` | Per LZ and month: total cost; cost and share at `APP-UNALLOC`; cost and share at `ENV-UNSPEC` or `ENV-UNALLOC`; accounts mapped vs not; the unmapped accounts by cost, largest first |
+| `coverage` | Per LZ and month: total cost; cost and share at `APP-UNALLOC` and at `APP-INVALID`; cost and share at `ENV-UNSPEC` or `ENV-UNALLOC`; accounts mapped vs not; the unmapped accounts by cost, largest first |
 | `findings` | Findings from the account map and the cost step, grouped by code, with subjects |
 
 ### Reference cases

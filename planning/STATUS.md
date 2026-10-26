@@ -8,7 +8,7 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 |---|---|---|
 | Review and merge the planning set, [PR #4](https://github.com/PopGreenTh/OpenLZ/pull/4) | Repo owner | waiting |
 | Answer [Q-001](DECISIONS.md#d-008) (multi-App cost split): by App tag, D-008 | Repo owner | done |
-| Confirm the [Q-002](DECISIONS.md#q-002) defaults (untagged, wrong App, matching) — not blocking | Repo owner | open |
+| Confirm the [Q-002](DECISIONS.md#q-002) defaults (untagged, matching; wrong App answered by D-010) — not blocking | Repo owner | open |
 | Push tag `v1-reference` on `main` (`git tag v1-reference e41e24d && git push origin v1-reference`) | Repo owner | waiting |
 
 ## DD-01 — Release 1: account mapping
