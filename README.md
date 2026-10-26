@@ -12,7 +12,7 @@ Work is currently underway on **DD-01: Release 1 (Account Mapping)**:
 - Allocates monthly AWS Cost Explorer spend across mapped accounts, splitting shared-account spend by App tag ([D-008](planning/DECISIONS.md#d-008)).
 - Produces rollup reports, unmapped spend coverage reports, and actionable findings.
 
-Current state: taxonomy validation (WI-0101-B) and AWS Organization inventory discovery with mock demo (WI-0102-A in progress).
+Current state: taxonomy validation (WI-0101-B), inventory discovery (WI-0102-A), and account mapping resolver (WI-0103-A in progress).
 
 ## Building and Running
 
@@ -55,6 +55,14 @@ Live discovery uses these IAM actions on the management account (or a delegated 
 - `organizations:ListRoots`
 - `organizations:ListOrganizationalUnitsForParent`
 - `organizations:ListAccountsForParent`
+
+### Account mapping
+
+Resolve discovered accounts to Project › App › Environment (requires valid taxonomy and inventory):
+
+```bash
+./openlz map [--taxonomy taxonomy/] [--inventory data/inventory.json] [--out data/account_map.json]
+```
 
 ### Taxonomy Commands
 
