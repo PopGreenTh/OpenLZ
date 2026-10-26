@@ -38,7 +38,7 @@ The names are indicative; the boundaries are not. One Work Order owns each area 
 
 Every `*.yaml` file in the taxonomy directory (default `taxonomy/`) is read, and their top-level
 keys are merged into one document. A key that appears in two files is an error. Unknown keys are
-errors. The merged document:
+errors at any level (a misspelt field inside an entry too, not only top-level keys). The merged document:
 
 ```yaml
 business_units:
@@ -112,7 +112,7 @@ Errors:
 | `code-invalid` | A Code fails the pattern or uses a reserved suffix |
 | `code-duplicate` | A Code repeats within its uniqueness scope |
 | `ref-missing` | A must-ref is empty |
-| `ref-unknown` | Any reference names a Code that doesn't exist |
+| `ref-unknown` | Any reference names a Code that doesn't exist. An Environment code given without an App (`ou_links[].environment`, an account entry without `apps`, an LZ or global default without `app`) must be defined under at least one App |
 | `lz-invalid` | `csp` isn't `AWS`, `currency` isn't three capital letters, or `management_account` isn't 12 digits |
 | `ou-link-empty` | An OU link sets neither `app` nor `environment` |
 | `ou-link-duplicate` | Two links on the same OU reference set the same field |
