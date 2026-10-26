@@ -87,12 +87,12 @@ Environment").
   by its account mapping, whatever its resources are tagged.
 - Release 1 stays at account grain: Cost Explorer is grouped by linked account **and** by the App
   tag, in the same call. No resource IDs are read (D-006 holds).
-- A tag value that equals the code of one of the account's Apps goes to that App
+- A tag value that equals the code of one of the account's Apps (ignoring case, D-011) goes to that App
   (`share_rule` `tag`).
 - Weights on account entries are withdrawn; the Q-001 proposal is not used.
 - The key must be activated as a **cost allocation tag** in AWS Billing. Cost Explorer shows the
   tag only from activation onward, never for earlier spend.
-- Defaults for the rest are in [Q-002](#q-002) until the repo owner confirms them.
+- Edge cases: [D-010](#d-010) (wrong App) and [D-011](#d-011) (untagged, matching).
 
 ## D-009
 
@@ -119,13 +119,19 @@ Q-002 item 2).
   wrong tag.
 - The suffix `-INVALID` is reserved like `-UNALLOC` and `-UNSPEC`.
 
+## D-011
+
+**Untagged shared-account cost is split equally; App tags match ignoring case** (repo owner,
+2026-10-26; answers Q-002 items 1 and 3, closing Q-002).
+
+- An untagged row of a shared account is split equally between the account's Apps, instead of
+  going to `APP-UNALLOC`. The finding `shared-untagged` is still raised, so the missing tags are
+  visible. The App sorting last by code takes the remainder, so the split adds back up exactly.
+- An App tag value matches an App when it equals the App's code ignoring case and surrounding
+  spaces (`app-chk` = `APP-CHK`). App names are not matched. This applies to both the D-008
+  split and the D-010 wrong-App check.
+
 ## Q-002
 
-**Open (items 1 and 3), not blocking: defaults applied until answered.** Edge cases of the App-tag split (D-008):
-
-1. **Untagged cost** in a shared account. *Default:* `APP-UNALLOC` under the account's
-   Environment, finding `shared-untagged`. *Alternative:* split equally between the account's Apps.
-2. ~~A tag naming a real App that is not on the account's list.~~ **Answered by [D-010](#d-010):
-   `APP-INVALID`.**
-3. **Matching.** *Default:* exact App code after trimming spaces; `app-chk` doesn't match
-   `APP-CHK`. *Alternative:* case-insensitive, or also match the App name.
+**Closed** by [D-010](#d-010) (item 2) and [D-011](#d-011) (items 1 and 3). Edge cases of the
+App-tag split (D-008): untagged cost, a tag naming an App the account doesn't serve, and matching.

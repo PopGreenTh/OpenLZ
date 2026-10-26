@@ -51,17 +51,23 @@ For each raw row, the account's allocations are taken from the account map (WI-0
 
 - An account with one allocation (`share_rule` `single`, or any system node) takes the row
   whole, whatever its `app_tag`.
-- An account whose allocations have `share_rule` `tag` (a shared account, D-008):
-  - a row whose `app_tag` equals the code of one of those Apps goes whole to that App's
-    allocation;
-  - a row with an empty `app_tag` goes to `APP-UNALLOC`, `app_rule` `unalloc`, finding
-    `shared-untagged` (subject `<account ID>/<month>`) — the Q-002 item 1 default;
-  - any other `app_tag` goes to `APP-INVALID`, `app_rule` `invalid` (D-010), with finding
-    `shared-tag-wrong-app` when the value is a real App code the account doesn't serve, or
-    `shared-tag-unknown` when it is no App at all (subject `<account ID>/<tag value>`);
-  - in both fallbacks the Environment is the account's, and Project, BusinessUnit and CostCenter
-    are `PRJ-UNALLOC`, `BU-UNALLOC`, `CC-UNALLOC`.
-- No row is ever divided, so every row lands whole in exactly one place.
+- An account whose allocations have `share_rule` `tag` (a shared account, D-008). An `app_tag`
+  **matches** an App when it equals the App's code ignoring case (`app-chk` matches `APP-CHK`;
+  D-011). For each row:
+  - a matching `app_tag` → the row goes whole to that App's allocation, `share` `1`,
+    `share_rule` `tag`;
+  - an empty `app_tag` → the row is **split equally** between the account's Apps (D-011),
+    `share` `1/n`, `share_rule` `untagged-equal`, with finding `shared-untagged` (subject
+    `<account ID>/<month>`) so the missing tags stay visible. The Apps are ordered by code;
+    every one but the last gets `amount × share`, and the last gets the remainder, so the split
+    adds back up exactly;
+  - any other `app_tag` → the row goes whole to `APP-INVALID` (D-010) under the account's
+    Environment, with Project, BusinessUnit and CostCenter `PRJ-UNALLOC`, `BU-UNALLOC`,
+    `CC-UNALLOC`, `app_rule` `invalid`, and finding `shared-tag-wrong-app` when the value matches
+    a real App the account doesn't serve, or `shared-tag-unknown` when it matches no App at all
+    (subject `<account ID>/<tag value>`).
+- Only an untagged row of a shared account is ever divided; every other row lands whole in
+  exactly one place.
 - An account in the cost data but not in the account map (for example a closed account) is
   allocated whole to `PRJ-UNALLOC › APP-UNALLOC › ENV-UNALLOC` under its row's LZ, with finding
   `account-not-in-inventory` (subject: account ID).
@@ -76,7 +82,8 @@ For each raw row, the account's allocations are taken from the account map (WI-0
 
 `data/cost_allocated.parquet` has the account-map columns (`lz`, `account_id`, `account_name`,
 `ou_path`, `project`, `app`, `environment`, `business_unit`, `cost_center`, `share`,
-`share_rule`, `app_rule`, `environment_rule`) plus `app_tag`, `month`, `metric`, `amount`, `currency`,
+`share_rule`, `app_rule`, `environment_rule`; `share` and `share_rule` here describe how the
+row was split, as above) plus `app_tag`, `month`, `metric`, `amount`, `currency`,
 `estimated` and `taxonomy_hash`.
 
 ### Reports
@@ -87,7 +94,7 @@ currencies; every report groups by currency.
 | Report | Shows |
 |---|---|
 | `rollup` | Month × BusinessUnit › Project › App › Environment, with subtotals per Project and BusinessUnit |
-| `coverage` | Per LZ and month: total cost; cost and share at `APP-UNALLOC` and at `APP-INVALID`; cost and share at `ENV-UNSPEC` or `ENV-UNALLOC`; accounts mapped vs not; the unmapped accounts by cost, largest first |
+| `coverage` | Per LZ and month: total cost; cost and share at `APP-UNALLOC` and at `APP-INVALID`; cost split equally because it was untagged; cost and share at `ENV-UNSPEC` or `ENV-UNALLOC`; accounts mapped vs not; the unmapped accounts by cost, largest first |
 | `findings` | Findings from the account map and the cost step, grouped by code, with subjects |
 
 ### Reference cases
@@ -112,7 +119,8 @@ currencies; every report groups by currency.
 - `openlz cost sense [--mock] [--from] [--to] [--metric] [--profile LZ=P] [--refresh]` and
   `openlz cost allocate [--map data/account_map.json]`.
 - A test that loads every file in `planning/DD-01-r1-account-mapping/cases/cost/`.
-- Unit tests: cache hit, miss and expiry; paging; parsing the tag group key (`App$APP-CHK`,
+- Unit tests: cache hit, miss and expiry; paging; the remainder rule; case-insensitive matching;
+  parsing the tag group key (`App$APP-CHK`,
   `App$`); `app-tag-not-seen`; the conservation check
   failing on a hand-broken allocation.
 
