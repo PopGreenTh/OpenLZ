@@ -17,7 +17,7 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
-| [WO-0101-A](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-a--skeleton-check-script-and-ci) | open (claimed by Antigravity) | — (met) | in progress | [#5](https://github.com/PopGreenTh/OpenLZ/issues/5) | — | `antigravity/wo-0101-a-skeleton` | 0 |
+| [WO-0101-A](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-a--skeleton-check-script-and-ci) | open (claimed by Antigravity) | — (met) | in review (approved) | [#5](https://github.com/PopGreenTh/OpenLZ/issues/5) | [#7](https://github.com/PopGreenTh/OpenLZ/pull/7) | `antigravity/wo-0101-a-skeleton` | 0 |
 | [WO-0101-B](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-b--taxonomy-model-yaml-loader-and-validation) | open | WO-0101-A | not started | — | — | — | 0 |
 
 ### WI-0102 — Inventory discovery
