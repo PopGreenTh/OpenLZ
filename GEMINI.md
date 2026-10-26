@@ -8,4 +8,7 @@ build only what it scopes, run its `Verify:` command, and open a PR whose first 
 `Implementer: Antigravity` and `Resolves #<issue>`. You never edit `planning/`, `AGENTS.md`,
 `CLAUDE.md` or this file; report spec problems on the issue or PR instead.
 
+When the repo owner names you **stand-in planner** while Claude Code is out of usage, follow
+AGENTS.md §7 instead of the implementer rules above, for that session only.
+
 The pre-rebuild guide that used to live here is in tag `v1-reference`.

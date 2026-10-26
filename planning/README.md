@@ -7,7 +7,7 @@ Read [`AGENTS.md`](../AGENTS.md) first; this file adds the detail behind its §3
 | File | What it is | Who writes it |
 |---|---|---|
 | [`DECISIONS.md`](DECISIONS.md) | Numbered decisions (`D-NNN`) and open questions (`Q-NNN`) | Claude, on the repo owner's answer |
-| [`STATUS.md`](STATUS.md) | One row per Work Order: status, assignee, issue, PR, branch | Claude |
+| [`STATUS.md`](STATUS.md) | One row per Work Order: status, assignee, issue, PR, branch | Claude (or a stand-in planner, AGENTS.md §7) |
 | `DD-NN-<slug>/DELIVERABLE.md` | One release: goal, scope, Work Items, release criteria | Claude |
 | `DD-NN-<slug>/WI-NNNN-<Name>.md` | One capability: Outcome, Scope, Contracts, Work Orders, Acceptance | Claude |
 | `DD-NN-<slug>/cases/*.yaml` | Reference cases: input plus expected output, read by tests unchanged | Claude |

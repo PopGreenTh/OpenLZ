@@ -23,7 +23,8 @@ CloudValueDelta can adopt it unchanged.
 | **Cursor** | Implementer | Source, tests, CI and docs inside the claimed Work Order's scope |
 
 Implementers never edit `planning/` or this file. If the spec is wrong, contradicts itself or is
-unclear, **stop and say so** in the PR or issue; Claude fixes the spec.
+unclear, **stop and say so** in the PR or issue; Claude fixes the spec. A stand-in planner session
+(§7) is the one exception.
 
 ## 3. The work hierarchy
 
@@ -81,3 +82,29 @@ go build -tags=no_duckdb_arrow -o /tmp/openlz . && /tmp/openlz run --mock
 ```
 
 (Until `WO-0101-A` merges, `scripts/check` doesn't exist and the tree is still v1.)
+
+## 7. Stand-in planner ([D-013](planning/DECISIONS.md#d-013))
+
+When Claude Code is out of usage, the repo owner may name a **stand-in planner**: today Antigravity
+running Gemini 4 Argon. The role is narrower than Claude Code's: it reviews and keeps
+`planning/STATUS.md` current, and it does not plan. Where unsure whether a step is yours, it is
+not: list it in the hand-back.
+
+- **Start and end.** Only the repo owner starts a session, by saying so ("Claude is out, stand in
+  as planner"). It ends when the repo owner says so or Claude Code's next session starts. Never
+  implement in the same session.
+- **Review** a PR against its Work Order's *Done when* only, as §4 step 6 describes: check the
+  first two lines against the claim, that no file under `cases/` changed, and that files stay in
+  the Work Order's packages. Lead the review with `Stand-in planner (<agent>, <model>) —
+  Approved` or `— Changes requested`. Re-review each push on a PR you sent back.
+- **Never review a PR whose Implementer is Antigravity**: that would be a self-review. Leave it
+  for Claude Code or the repo owner.
+- **Bookkeeping.** Update `planning/STATUS.md` (status, PR, branch, Revisions) and nothing else
+  in `planning/`. No Work Order, decision, reference case, `Delivered (as built)` section,
+  dispatch issue, or edit to this file, `CLAUDE.md`, `GEMINI.md` or `docs/taxonomy-spec.md`.
+- **Merge** only on the repo owner's go-ahead, as always.
+- **Branch and hand-back.** Commit to one branch `standin/<YYYY-MM-DD>` and open one PR
+  `Stand-in planner: <YYYY-MM-DD>`, never merged by you. Its description lists every PR reviewed
+  (verdict and link), every PR skipped and why, and every spec gap or question for the repo owner.
+- **Stop and tell the repo owner** when a PR needs a spec change or a decision, or when the only
+  PRs waiting are Antigravity's.

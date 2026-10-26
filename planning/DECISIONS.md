@@ -144,3 +144,27 @@ App-tag split (D-008): untagged cost, a tag naming an App the account doesn't se
   Argon**.
 - Both work as Antigravity, so a PR still opens with `Implementer: Antigravity`, and nothing in
   the loop (AGENTS.md §4) changes.
+
+## D-013
+
+**A stand-in planner while Claude Code is out of usage** (repo owner, 2026-10-26; the OpenLZ
+counterpart of CloudValueDelta-Plan's D-091).
+
+- Antigravity running **Gemini 4 Argon** (D-012) may stand in as planner while Claude Code has hit
+  its usage limit. Its rules are AGENTS.md §7. The role is named for the job, not the agent:
+  Cursor or a person could stand in under the same rules.
+- **Review and bookkeeping only.** The stand-in reviews PRs against their Work Order's *Done when*
+  and keeps `planning/STATUS.md` current. It writes no spec, decision, reference case or
+  `Delivered (as built)` section, and dispatches nothing.
+- **No self-review.** It never reviews a PR whose Implementer is Antigravity, whatever model
+  built it. Those wait for Claude Code or the repo owner. Its review of a Cursor or human PR
+  clears the review gate (AGENTS.md §4 step 6).
+- **Only the repo owner starts a session**, by saying so. It ends when the repo owner says so or
+  Claude Code's next session starts. Merging stays on the repo owner's go-ahead, as always.
+- **Labelled, and on its own branch.** Every stand-in review leads with
+  `Stand-in planner (<agent>, <model>)` and its verdict. Its `STATUS.md` changes go on one
+  `standin/<YYYY-MM-DD>` branch and one PR `Stand-in planner: <YYYY-MM-DD>`, which it never
+  merges. The PR description is the hand-back: reviewed, skipped and why, and the gaps found.
+  Claude Code reads it first in its next session and spot-checks the reviews.
+- Differences from CloudValueDelta-Plan's D-091: no ClickUp mirror or implementation notes exist
+  here, and the stand-in never merges, since OpenLZ has no auto mode.
