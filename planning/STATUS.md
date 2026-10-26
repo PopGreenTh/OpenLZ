@@ -36,5 +36,5 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
-| [WO-0104-A](DD-01-r1-account-mapping/WI-0104-Cost-And-Reports.md#wo-0104-a--cost-explorer-cache-and-allocation) | open | WO-0102-A (met), WO-0103-A (met) | not started | — | — | — | 0 |
+| [WO-0104-A](DD-01-r1-account-mapping/WI-0104-Cost-And-Reports.md#wo-0104-a--cost-explorer-cache-and-allocation) | open | WO-0102-A (met), WO-0103-A (met) | to do | [#20](https://github.com/PopGreenTh/OpenLZ/issues/20) | — | — | 0 |
 | [WO-0104-B](DD-01-r1-account-mapping/WI-0104-Cost-And-Reports.md#wo-0104-b--reports-openlz-run-and-the-demo) | open | WO-0104-A | not started | — | — | — | 0 |
