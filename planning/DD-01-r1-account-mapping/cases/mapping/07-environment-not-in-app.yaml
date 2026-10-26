@@ -1,0 +1,33 @@
+name: environment-not-in-app
+why: >
+  The OU says ENV-DR but the App resolved for the account has no DR Environment. Environments
+  live under their App, so the Environment becomes ENV-UNSPEC and the gap is flagged.
+inventory:
+  organizations:
+    - id: o-case07
+      management_account: "111111111111"
+      root_id: r-c007
+      ous:
+        - { id: ou-c007-chk00001, name: Checkout, parent_id: r-c007 }
+        - { id: ou-c007-chkdr001, name: DR,       parent_id: ou-c007-chk00001 }
+      accounts:
+        - { id: "777777777701", name: chk-dr, status: ACTIVE, parent_id: ou-c007-chkdr001 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers: [{ code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }]
+  projects: [{ code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL }]
+  apps:
+    - { code: APP-CHK, name: Checkout, project: PRJ-SHOP, cost_center: CC-ECOM,
+        environments: [{ code: ENV-PROD, name: Production }] }
+    - { code: APP-PAY, name: Payments, project: PRJ-SHOP, cost_center: CC-ECOM,
+        environments: [{ code: ENV-DR, name: Disaster recovery }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  ou_links:
+    - { ou: /Checkout, app: APP-CHK }
+    - { ou: /Checkout/DR, environment: ENV-DR }
+expect:
+  allocations:
+    - { account_id: "777777777701", project: PRJ-SHOP, app: APP-CHK, environment: ENV-UNSPEC,
+        app_rule: "ou:/Checkout", environment_rule: unspec }
+  findings:
+    - { code: environment-not-in-app, subject: "777777777701/APP-CHK" }

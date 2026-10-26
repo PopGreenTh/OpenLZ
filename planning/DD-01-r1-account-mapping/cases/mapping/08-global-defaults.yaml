@@ -1,0 +1,34 @@
+name: global-defaults
+why: >
+  Global defaults. Both accounts get their App from the global default. Account 01, directly
+  under the root, gets no Environment from anywhere, so ENV-UNSPEC; account 02 gets its
+  Environment from its OU.
+inventory:
+  organizations:
+    - id: o-case08
+      management_account: "111111111111"
+      root_id: r-c008
+      ous:
+        - { id: ou-c008-prod0001, name: Prod, parent_id: r-c008 }
+      accounts:
+        - { id: "888888888801", name: misc,      status: ACTIVE, parent_id: r-c008 }
+        - { id: "888888888802", name: misc-prod, status: ACTIVE, parent_id: ou-c008-prod0001 }
+taxonomy:
+  business_units: [{ code: BU-IT, name: IT }]
+  cost_centers: [{ code: CC-PLAT, name: Platform, business_unit: BU-IT }]
+  projects: [{ code: PRJ-CORE, name: Core, business_unit: BU-IT }]
+  apps:
+    - { code: APP-PLATFORM, name: Platform, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  defaults: { app: APP-PLATFORM }
+  ou_links:
+    - { ou: /Prod, environment: ENV-PROD }
+expect:
+  allocations:
+    - { account_id: "888888888801", ou_path: /, project: PRJ-CORE, app: APP-PLATFORM, environment: ENV-UNSPEC,
+        app_rule: default, environment_rule: unspec }
+    - { account_id: "888888888802", app: APP-PLATFORM, environment: ENV-PROD,
+        app_rule: default, environment_rule: "ou:/Prod" }
+  findings:
+    - { code: environment-unresolved, subject: "888888888801" }

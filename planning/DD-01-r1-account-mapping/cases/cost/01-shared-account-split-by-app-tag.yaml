@@ -1,0 +1,47 @@
+name: shared-account-split-by-app-tag
+why: >
+  A shared account's cost is split by the App tag (D-008): each tagged row goes whole to its App,
+  untagged cost and a tag naming an App the account doesn't serve go to APP-UNALLOC under the
+  account's Environment (Q-002 defaults). A single-App account ignores the tag entirely.
+inventory:
+  organizations:
+    - id: o-cost01
+      management_account: "111111111111"
+      root_id: r-k001
+      ous: []
+      accounts:
+        - { id: "200000000001", name: shared, status: ACTIVE, parent_id: r-k001 }
+        - { id: "200000000002", name: dedicated, status: ACTIVE, parent_id: r-k001 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers: [{ code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }]
+  projects: [{ code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL }]
+  apps:
+    - { code: APP-A, name: A, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-PROD, name: Production }] }
+    - { code: APP-B, name: B, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-PROD, name: Production }] }
+    - { code: APP-C, name: C, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  cost_allocation: { app_tag: Application }
+  accounts:
+    - { account: "200000000001", environment: ENV-PROD, apps: [{ app: APP-A }, { app: APP-B }] }
+    - { account: "200000000002", environment: ENV-PROD, apps: [{ app: APP-C }] }
+cost:
+  - { lz: LZ-MAIN, account_id: "200000000001", app_tag: APP-A, month: "2026-09", metric: UnblendedCost, amount: 600.00, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "200000000001", app_tag: APP-B, month: "2026-09", metric: UnblendedCost, amount: 300.00, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "200000000001", app_tag: "",    month: "2026-09", metric: UnblendedCost, amount: 80.00,  currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "200000000001", app_tag: APP-C, month: "2026-09", metric: UnblendedCost, amount: 20.00,  currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "200000000002", app_tag: APP-A, month: "2026-09", metric: UnblendedCost, amount: 50.00,  currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "200000000002", app_tag: "",    month: "2026-09", metric: UnblendedCost, amount: 150.00, currency: USD, estimated: false }
+expect:
+  allocated:
+    - { account_id: "200000000001", app_tag: APP-A, app: APP-A, environment: ENV-PROD, amount: 600.00, share_rule: tag }
+    - { account_id: "200000000001", app_tag: APP-B, app: APP-B, environment: ENV-PROD, amount: 300.00, share_rule: tag }
+    - { account_id: "200000000001", app_tag: "",    project: PRJ-UNALLOC, app: APP-UNALLOC, environment: ENV-PROD,
+        app_rule: unalloc, amount: 80.00 }
+    - { account_id: "200000000001", app_tag: APP-C, project: PRJ-UNALLOC, app: APP-UNALLOC, environment: ENV-PROD,
+        app_rule: unalloc, amount: 20.00 }
+    - { account_id: "200000000002", app_tag: APP-A, app: APP-C, environment: ENV-PROD, amount: 50.00, share_rule: single }
+    - { account_id: "200000000002", app_tag: "",    app: APP-C, environment: ENV-PROD, amount: 150.00, share_rule: single }
+  findings:
+    - { code: shared-untagged, subject: 200000000001/2026-09 }
+    - { code: shared-tag-invalid, subject: 200000000001/APP-C }

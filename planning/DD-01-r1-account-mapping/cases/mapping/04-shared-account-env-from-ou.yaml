@@ -1,0 +1,37 @@
+name: shared-account-env-from-ou
+why: >
+  A shared account lists three Apps (in any order; allocations come out sorted by App code). The
+  account entry gives no Environment, so it comes from the OU and applies to every App.
+inventory:
+  organizations:
+    - id: o-case04
+      management_account: "111111111111"
+      root_id: r-c004
+      ous:
+        - { id: ou-c004-shrd0001, name: Shared, parent_id: r-c004 }
+        - { id: ou-c004-shnp0001, name: NonProd, parent_id: ou-c004-shrd0001 }
+      accounts:
+        - { id: "444444444401", name: shared-nonprod, status: ACTIVE, parent_id: ou-c004-shnp0001 }
+taxonomy:
+  business_units: [{ code: BU-RETAIL, name: Retail }]
+  cost_centers: [{ code: CC-ECOM, name: E-commerce, business_unit: BU-RETAIL }]
+  projects: [{ code: PRJ-SHOP, name: Online shop, business_unit: BU-RETAIL }]
+  apps:
+    - { code: APP-A, name: A, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-NONPROD, name: Non-production }] }
+    - { code: APP-B, name: B, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-NONPROD, name: Non-production }] }
+    - { code: APP-C, name: C, project: PRJ-SHOP, cost_center: CC-ECOM, environments: [{ code: ENV-NONPROD, name: Non-production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  ou_links:
+    - { ou: /Shared/NonProd, environment: ENV-NONPROD }
+  accounts:
+    - account: "444444444401"
+      apps: [{ app: APP-C }, { app: APP-A }, { app: APP-B }]
+expect:
+  allocations:
+    - { account_id: "444444444401", app: APP-A, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+    - { account_id: "444444444401", app: APP-B, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+    - { account_id: "444444444401", app: APP-C, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+  findings: []

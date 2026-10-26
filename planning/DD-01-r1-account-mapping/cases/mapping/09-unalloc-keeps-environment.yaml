@@ -1,0 +1,29 @@
+name: unalloc-keeps-environment
+why: >
+  Nothing gives the account an App: no account entry, no App link on its OUs, no defaults. It is
+  UNALLOC, but its OU's Environment is kept, so reports still show unmapped production spend.
+inventory:
+  organizations:
+    - id: o-case09
+      management_account: "111111111111"
+      root_id: r-c009
+      ous:
+        - { id: ou-c009-prod0001, name: Prod, parent_id: r-c009 }
+      accounts:
+        - { id: "999999999901", name: unknown-prod, status: ACTIVE, parent_id: ou-c009-prod0001 }
+taxonomy:
+  business_units: [{ code: BU-IT, name: IT }]
+  cost_centers: [{ code: CC-PLAT, name: Platform, business_unit: BU-IT }]
+  projects: [{ code: PRJ-CORE, name: Core, business_unit: BU-IT }]
+  apps:
+    - { code: APP-PLATFORM, name: Platform, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs: [{ code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111" }]
+  ou_links:
+    - { ou: /Prod, environment: ENV-PROD }
+expect:
+  allocations:
+    - { account_id: "999999999901", lz: LZ-MAIN, project: PRJ-UNALLOC, app: APP-UNALLOC, environment: ENV-PROD,
+        business_unit: BU-UNALLOC, cost_center: CC-UNALLOC, share: 1, app_rule: unalloc, environment_rule: "ou:/Prod" }
+  findings:
+    - { code: account-unmapped, subject: "999999999901" }

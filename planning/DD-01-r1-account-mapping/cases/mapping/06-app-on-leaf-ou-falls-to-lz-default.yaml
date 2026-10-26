@@ -1,0 +1,34 @@
+name: app-on-leaf-ou-falls-to-lz-default
+why: >
+  An App may only be linked to an OU that has child OUs (D-007). A link on a leaf OU is ignored
+  and flagged, but the Environment on the same link still applies. The App then comes from the
+  LZ default.
+inventory:
+  organizations:
+    - id: o-case06
+      management_account: "111111111111"
+      root_id: r-c006
+      ous:
+        - { id: ou-c006-team0001, name: TeamX, parent_id: r-c006 }
+      accounts:
+        - { id: "666666666601", name: teamx, status: ACTIVE, parent_id: ou-c006-team0001 }
+taxonomy:
+  business_units: [{ code: BU-IT, name: IT }]
+  cost_centers: [{ code: CC-PLAT, name: Platform, business_unit: BU-IT }]
+  projects: [{ code: PRJ-CORE, name: Core, business_unit: BU-IT }]
+  apps:
+    - { code: APP-PLATFORM, name: Platform, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }, { code: ENV-SHARED, name: Shared }] }
+    - { code: APP-TEAMX, name: Team X, project: PRJ-CORE, cost_center: CC-PLAT,
+        environments: [{ code: ENV-PROD, name: Production }] }
+  lzs:
+    - { code: LZ-MAIN, name: Main, csp: AWS, currency: USD, management_account: "111111111111",
+        default: { app: APP-PLATFORM, environment: ENV-SHARED } }
+  ou_links:
+    - { ou: /TeamX, app: APP-TEAMX, environment: ENV-PROD }
+expect:
+  allocations:
+    - { account_id: "666666666601", app: APP-PLATFORM, environment: ENV-PROD,
+        app_rule: lz-default, environment_rule: "ou:/TeamX" }
+  findings:
+    - { code: app-on-leaf-ou, subject: /TeamX }
