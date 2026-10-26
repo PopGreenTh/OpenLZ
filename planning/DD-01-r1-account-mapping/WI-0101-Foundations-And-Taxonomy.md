@@ -112,7 +112,7 @@ Errors:
 | `code-invalid` | A Code fails the pattern or uses a reserved suffix |
 | `code-duplicate` | A Code repeats within its uniqueness scope |
 | `ref-missing` | A must-ref is empty |
-| `ref-unknown` | Any reference names a Code that doesn't exist. An Environment code given without an App (`ou_links[].environment`, an account entry without `apps`, an LZ or global default without `app`) must be defined under at least one App |
+| `ref-unknown` | Any reference names a Code that doesn't exist. An Environment code given without an App (`ou_links[].environment`, an account entry without `apps`, an LZ or global default without `app`) must be defined under at least one App. An OU link that names an App and an Environment must use an Environment of that App |
 | `lz-invalid` | `csp` isn't `AWS`, `currency` isn't three capital letters, or `management_account` isn't 12 digits |
 | `ou-link-empty` | An OU link sets neither `app` nor `environment` |
 | `ou-link-duplicate` | Two links on the same OU reference set the same field |
