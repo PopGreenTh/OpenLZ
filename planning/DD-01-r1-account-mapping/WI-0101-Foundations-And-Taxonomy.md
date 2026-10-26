@@ -91,10 +91,11 @@ accounts:
   - account: "222222222222"           # 12 digits, quoted
     environment: ENV-PROD             # optional
     apps:                             # optional; at least one of environment/apps
-      - app: APP-CHK
-        weight: 70                    # optional; all or none (Q-001)
+      - app: APP-CHK                  # two or more Apps: cost split by the App tag (D-008)
       - app: APP-PAY
-        weight: 30
+
+cost_allocation:                      # optional
+  app_tag: App                        # tag key whose value is an App code; default "App"
 ```
 
 ### Validation
@@ -118,7 +119,7 @@ Errors:
 | `account-invalid` | Not 12 digits, listed twice, or sets neither `environment` nor `apps` |
 | `account-app-duplicate` | The same App listed twice on one account |
 | `account-env-not-in-app` | The account's Environment is not defined under one of its Apps (D-005) |
-| `weight-invalid` | Weights given for some Apps but not all, or a weight ≤ 0 |
+| `tag-key-invalid` | `cost_allocation.app_tag` is empty, longer than 128 characters, or starts with `aws:` |
 | `default-env-not-in-app` | A default (LZ or global) sets both App and Environment and the Environment isn't under that App |
 
 Warnings:

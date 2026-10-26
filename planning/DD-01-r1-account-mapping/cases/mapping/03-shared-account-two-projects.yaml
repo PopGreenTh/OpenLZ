@@ -1,7 +1,7 @@
-name: shared-account-weighted
+name: shared-account-two-projects
 why: >
   One account serves two Apps of different Projects (D-005). Its single Environment must exist
-  under both Apps. Shares follow the weights (Q-001 proposal). The Data Project is not linked to
+  under both Apps. Each allocation waits for the App tag to split the cost (D-008). The Data Project is not linked to
   this LZ, which is flagged but does not change the allocation.
 inventory:
   organizations:
@@ -32,13 +32,13 @@ taxonomy:
     - account: "333333333301"
       environment: ENV-PROD
       apps:
-        - { app: APP-LAKE, weight: 30 }
-        - { app: APP-CHK, weight: 70 }
+        - { app: APP-LAKE }
+        - { app: APP-CHK }
 expect:
   allocations:
     - { account_id: "333333333301", project: PRJ-SHOP, app: APP-CHK, environment: ENV-PROD,
-        cost_center: CC-ECOM, share: 0.7, share_rule: weighted, app_rule: account, environment_rule: account }
+        cost_center: CC-ECOM, share: null, share_rule: tag, app_rule: account, environment_rule: account }
     - { account_id: "333333333301", project: PRJ-DATA, app: APP-LAKE, environment: ENV-PROD,
-        cost_center: CC-DATA, share: 0.3, share_rule: weighted, app_rule: account, environment_rule: account }
+        cost_center: CC-DATA, share: null, share_rule: tag, app_rule: account, environment_rule: account }
   findings:
     - { code: project-lz-unlinked, subject: "333333333301/PRJ-DATA" }

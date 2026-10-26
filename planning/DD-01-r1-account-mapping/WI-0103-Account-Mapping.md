@@ -36,8 +36,9 @@ An `app` link on an OU with no child OUs (a leaf, D-007) is ignored (`app-on-lea
 | 4 | The global `defaults.app` | `default` |
 | 5 | Nothing: App `APP-UNALLOC`, Project `PRJ-UNALLOC`, finding `account-unmapped` | `unalloc` |
 
-Shares: one App → `1`, `share_rule` `single`. Several Apps (account entry only) → by weight
-(`weighted`) or equally (`equal`), per Q-001.
+Shares: one App → `share` `1`, `share_rule` `single`. Several Apps (account entry only) → one
+allocation per App with `share` `null` and `share_rule` `tag`: the cost step splits the account's
+cost by the App tag (D-008, WI-0104).
 
 **3. Environment** — resolved separately, same order:
 
@@ -124,7 +125,7 @@ expect:
     - { code: …, subject: "…" }
 ```
 
-Shares are compared to within `1e-9`. `findings` are the resolver's findings from the table above;
+Shares are compared to within `1e-9`; `share: null` means the field is null. `findings` are the resolver's findings from the table above;
 taxonomy validation warnings are not part of a mapping case. To keep cases small, a case's inventory may leave out the
 management account; the resolver must not require it.
 

@@ -1,7 +1,7 @@
-name: shared-account-equal-env-from-ou
+name: shared-account-env-from-ou
 why: >
-  A shared account lists three Apps without weights, so they share equally. The account entry
-  gives no Environment, so it comes from the OU and applies to every App.
+  A shared account lists three Apps (in any order; allocations come out sorted by App code). The
+  account entry gives no Environment, so it comes from the OU and applies to every App.
 inventory:
   organizations:
     - id: o-case04
@@ -28,10 +28,10 @@ taxonomy:
       apps: [{ app: APP-C }, { app: APP-A }, { app: APP-B }]
 expect:
   allocations:
-    - { account_id: "444444444401", app: APP-A, environment: ENV-NONPROD, share: 0.3333333333333333,
-        share_rule: equal, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
-    - { account_id: "444444444401", app: APP-B, environment: ENV-NONPROD, share: 0.3333333333333333,
-        share_rule: equal, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
-    - { account_id: "444444444401", app: APP-C, environment: ENV-NONPROD, share: 0.3333333333333333,
-        share_rule: equal, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+    - { account_id: "444444444401", app: APP-A, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+    - { account_id: "444444444401", app: APP-B, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
+    - { account_id: "444444444401", app: APP-C, environment: ENV-NONPROD, share: null,
+        share_rule: tag, app_rule: account, environment_rule: "ou:/Shared/NonProd" }
   findings: []

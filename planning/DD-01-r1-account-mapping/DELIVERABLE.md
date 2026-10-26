@@ -17,12 +17,13 @@ account is accounted for: anything that cannot be mapped is shown explicitly as 
 - Validation of the taxonomy on its own (no AWS needed), usable in CI on a taxonomy PR.
 - Account mapping: each account to one Environment and one or more Apps (D-005, D-007), with the
   rule that decided each level.
-- Monthly Cost Explorer spend per linked account, allocated through the mapping and rolled up.
+- Monthly Cost Explorer spend per linked account, allocated through the mapping and rolled up;
+  a shared account's spend is split by the App tag (D-008).
 - Reports: rollup, coverage (what is unmapped and how much it costs), findings. Console, CSV and
   Parquet.
 - `openlz run --mock`: the whole flow offline, on a demo landing zone.
 
-**Out (later releases):** tags, resources and resource groups; Region/Zone; ServiceCat/Service and
+**Out (later releases):** tags other than the App tag on shared accounts; resources and resource groups; Region/Zone; ServiceCat/Service and
 ServiceUsage/UsageType; Feature and Function; OwnerTeam, ProductLine and Customer; alias table;
 OU path patterns; budgets; re-attribution history (spec v3 §8); Directus or any UI; clouds other
 than AWS; currency conversion.

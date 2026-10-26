@@ -21,9 +21,9 @@ taxonomy:
   accounts:
     - { account: "300000000001", environment: ENV-PROD, apps: [{ app: APP-A }] }
 cost:
-  - { lz: LZ-MAIN, account_id: "300000000001", month: "2026-08", metric: UnblendedCost, amount: 40.00, currency: USD, estimated: false }
-  - { lz: LZ-MAIN, account_id: "300000000099", month: "2026-08", metric: UnblendedCost, amount: 12.50, currency: USD, estimated: false }
-  - { lz: LZ-MAIN, account_id: "300000000001", month: "2026-09", metric: UnblendedCost, amount: 900.00, currency: THB, estimated: true }
+  - { lz: LZ-MAIN, account_id: "300000000001", app_tag: "", month: "2026-08", metric: UnblendedCost, amount: 40.00, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "300000000099", app_tag: "", month: "2026-08", metric: UnblendedCost, amount: 12.50, currency: USD, estimated: false }
+  - { lz: LZ-MAIN, account_id: "300000000001", app_tag: "", month: "2026-09", metric: UnblendedCost, amount: 900.00, currency: THB, estimated: true }
 expect:
   allocated:
     - { account_id: "300000000001", month: "2026-08", project: PRJ-SHOP, app: APP-A, environment: ENV-PROD, amount: 40.00, currency: USD }

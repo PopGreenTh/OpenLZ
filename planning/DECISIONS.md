@@ -46,7 +46,7 @@ Work Order. Release 1 is `DD-01`.
   their App (spec v3 §5), so that code must be defined under **every** App the account serves.
 - An account may serve one or more Apps, possibly of different Projects. Its resolved result is
   one allocation per App, all with the same Environment code.
-- How a multi-App account's cost is shared between its Apps: see [Q-001](#q-001).
+- How a multi-App account's cost is shared between its Apps: [D-008](#d-008).
 - This supersedes spec v3's "an Account can host several Apps" without an Environment rule, and
   matches CloudValueDelta D-081's one-Environment-per-account rule while relaxing its
   one-App-per-account rule.
@@ -77,16 +77,31 @@ Environment").
 - Release 1 has no `SHP`/`SHN` system Environments: a shared account is an account that serves
   several Apps (D-005).
 
-## Q-001
+## D-008
 
-**Open — blocks `WO-0104-A`.** How is a multi-App account's cost shared between its Apps?
+**A shared account's cost is split by an App tag** (repo owner, 2026-10-26; resolves Q-001).
 
-Planner's proposal, used in the reference cases until answered:
+- The taxonomy names the tag key once: `cost_allocation.app_tag`, default **`App`**. Its value
+  is an App code (for example `App=APP-CHK`).
+- The tag is read only for accounts that serve two or more Apps. A single-App account is decided
+  by its account mapping, whatever its resources are tagged.
+- Release 1 stays at account grain: Cost Explorer is grouped by linked account **and** by the App
+  tag, in the same call. No resource IDs are read (D-006 holds).
+- A tag value that equals the code of one of the account's Apps goes to that App
+  (`share_rule` `tag`).
+- Weights on account entries are withdrawn; the Q-001 proposal is not used.
+- The key must be activated as a **cost allocation tag** in AWS Billing. Cost Explorer shows the
+  tag only from activation onward, never for earlier spend.
+- Defaults for the rest are in [Q-002](#q-002) until the repo owner confirms them.
 
-- optional `weight` per App on the account entry; weights are all given or all omitted;
-- with weights, share = weight ÷ sum of weights; without, equal shares;
-- the allocation rule records which (`account-weighted` or `account-equal`);
-- to keep totals exact, the App that sorts last by code takes the remainder after rounding.
+## Q-002
 
-Alternatives: keep the cost at `APP-UNALLOC` under the account's Environment until resource-level
-attribution exists; or require weights for every multi-App account.
+**Open, not blocking: defaults applied until answered.** Edge cases of the App-tag split (D-008):
+
+1. **Untagged cost** in a shared account. *Default:* `APP-UNALLOC` under the account's
+   Environment, finding `shared-untagged`. *Alternative:* split equally between the account's Apps.
+2. **A tag naming a real App that is not on the account's list.** *Default:* treated as invalid,
+   `APP-UNALLOC`, finding `shared-tag-invalid`. *Alternative:* accept it when the App has the
+   account's Environment, since a shared account decides nothing (spec v3 §6 "the tag wins").
+3. **Matching.** *Default:* exact App code after trimming spaces; `app-chk` doesn't match
+   `APP-CHK`. *Alternative:* case-insensitive, or also match the App name.
