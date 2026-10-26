@@ -40,10 +40,12 @@ unclear, **stop and say so** in the PR or issue; Claude fixes the spec.
 ## 4. The loop for one Work Order
 
 1. **Dispatch.** On the repo owner's go-ahead, Claude opens a GitHub issue `WO-NNNN-X: <title>`
-   with the Work Order's spec, its `Assignee:` and its `Verify:` line.
+   with the Work Order's spec, its `Assignee:` and its `Verify:` line. `Assignee:` is **`open`**
+   by default: no agent is named, and the issue doesn't address one. Claude or the repo owner
+   names an agent only when the Work Order really needs that one (D-009).
 2. **Claim.** The implementer comments `Claimed by <Antigravity|Cursor> on branch <branch>`.
-   If the issue is already claimed, or a PR for it is open, **stop**. If `Assignee:` names someone
-   else, don't start. `open` means the first claim wins.
+   **The first claim wins.** If the issue is already claimed, or a PR for it is open, **stop**.
+   If `Assignee:` names someone else, don't start.
 3. **Build** only what *In scope* says, in the packages the Work Item names. Touching a file
    outside them is a defect, unless the Work Order says so.
 4. **Verify.** Run the `Verify:` command. When it fails because the spec contradicts itself, stop

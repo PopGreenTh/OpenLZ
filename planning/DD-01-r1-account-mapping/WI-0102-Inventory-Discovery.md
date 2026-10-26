@@ -59,7 +59,7 @@ goes through the retry wrapper in `internal/awsx`, and paging is followed to the
 
 ## WO-0102-A — AWS Organization discovery and mock
 
-**Assignee:** Antigravity (proposed)
+**Assignee:** open
 **Depends on:** WO-0101-B
 **Packages:** `internal/inventory`, `internal/awsx`, `cmd/inventory*.go`, `testdata/inventory/`
 

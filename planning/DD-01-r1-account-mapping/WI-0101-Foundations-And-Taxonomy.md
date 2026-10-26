@@ -28,10 +28,10 @@ The names are indicative; the boundaries are not. One Work Order owns each area 
 ### Codes
 
 - A Code matches `^[A-Z][A-Z0-9-]{1,31}$`. Names are free text and may repeat.
-- Codes ending in `-UNALLOC` or `-UNSPEC` are reserved for system nodes and rejected in YAML.
+- Codes ending in `-UNALLOC`, `-UNSPEC` or `-INVALID` are reserved for system nodes and rejected in YAML.
 - Unique within their level: BusinessUnit, CostCenter, Project, App, LZ. Environment codes are
   unique within their App only.
-- System nodes (generated, never in YAML): `LZ-UNALLOC`, `PRJ-UNALLOC`, `APP-UNALLOC`,
+- System nodes (generated, never in YAML): `LZ-UNALLOC`, `PRJ-UNALLOC`, `APP-UNALLOC`, `APP-INVALID`,
   `ENV-UNALLOC`, `ENV-UNSPEC`, `BU-UNALLOC`, `CC-UNALLOC`.
 
 ### Taxonomy files
@@ -134,7 +134,7 @@ WI-0103.
 
 ## WO-0101-A — Skeleton, check script and CI
 
-**Assignee:** Cursor (proposed)
+**Assignee:** open
 **Depends on:** the repo owner has pushed tag `v1-reference` on `main`
 **Packages:** repo root, `cmd/`, `scripts/`, `.github/workflows/`, `.gitignore`, `README.md`
 
@@ -169,7 +169,7 @@ dependency (WO-0104-A).
 
 ## WO-0101-B — Taxonomy model, YAML loader and validation
 
-**Assignee:** Antigravity (proposed)
+**Assignee:** open
 **Depends on:** WO-0101-A
 **Packages:** `internal/taxonomy`, `cmd/taxonomy*.go`, `taxonomy/`
 

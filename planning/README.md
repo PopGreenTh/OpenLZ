@@ -25,7 +25,7 @@ Read [`AGENTS.md`](../AGENTS.md) first; this file adds the detail behind its §3
 ```markdown
 ## WO-NNNN-X — <title>
 
-**Assignee:** open | Antigravity | Cursor | @handle
+**Assignee:** open (default) | Antigravity | Cursor | @handle — name one only when it's really needed (D-009)
 **Depends on:** WO-… (merged) | —
 **Packages:** the only directories this Work Order may change
 

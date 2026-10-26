@@ -58,7 +58,7 @@ WI-0102, and `WO-0103-A`'s reference cases carry their own inventory.
 5. Against a real AWS Organization (repo owner's run), `openlz run` completes with read-only
    permissions listed in the README.
 
-## Proposed assignees
+## Assignees
 
-Antigravity takes the core (`WO-0101-B`, `WO-0102-A`, `WO-0103-A`); Cursor takes the edges
-(`WO-0101-A`, `WO-0104-A`, `WO-0104-B`). The repo owner confirms at each dispatch.
+Every Work Order is `open`: the first implementer to claim it takes it (D-009). Only
+`WO-0102-A` and `WO-0103-A` run at the same time, and they touch different packages.

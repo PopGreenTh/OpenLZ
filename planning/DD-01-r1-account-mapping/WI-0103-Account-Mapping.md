@@ -131,7 +131,7 @@ management account; the resolver must not require it.
 
 ## WO-0103-A — Account resolver
 
-**Assignee:** Antigravity (proposed)
+**Assignee:** open
 **Depends on:** WO-0101-B. Runs alongside WO-0102-A; if WO-0102-A has not merged, this Work Order
 reads the inventory through the WI-0102 contract and adds the inventory types only if they don't
 exist yet, coordinating on the issue.
