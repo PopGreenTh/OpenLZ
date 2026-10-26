@@ -1,0 +1,42 @@
+[
+  {
+    "lz": "LZ-MAIN",
+    "account_id": "666666666601",
+    "app_tag": "APP-CHK",
+    "month": "2026-09",
+    "metric": "UnblendedCost",
+    "amount": 400.0,
+    "currency": "USD",
+    "estimated": false
+  },
+  {
+    "lz": "LZ-MAIN",
+    "account_id": "666666666601",
+    "app_tag": "",
+    "month": "2026-09",
+    "metric": "UnblendedCost",
+    "amount": 100.0,
+    "currency": "USD",
+    "estimated": false
+  },
+  {
+    "lz": "LZ-MAIN",
+    "account_id": "222222222201",
+    "app_tag": "",
+    "month": "2026-09",
+    "metric": "UnblendedCost",
+    "amount": 25.0,
+    "currency": "USD",
+    "estimated": false
+  },
+  {
+    "lz": "LZ-MAIN",
+    "account_id": "999999999999",
+    "app_tag": "",
+    "month": "2026-09",
+    "metric": "UnblendedCost",
+    "amount": 15.0,
+    "currency": "USD",
+    "estimated": false
+  }
+]

@@ -10,6 +10,19 @@ import (
 	"github.com/PopGreenTh/OpenLZ/internal/taxonomy"
 )
 
+// ReadAccountMap loads an account map JSON file.
+func ReadAccountMap(path string) (*AccountMapDocument, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read account map: %w", err)
+	}
+	var doc AccountMapDocument
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse account map: %w", err)
+	}
+	return &doc, nil
+}
+
 // WriteAccountMap writes the account map document to path.
 func WriteAccountMap(path string, doc *AccountMapDocument) error {
 	if doc == nil {
