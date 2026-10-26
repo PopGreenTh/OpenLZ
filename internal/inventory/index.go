@@ -90,7 +90,7 @@ func (idx *Index) buildPaths() []PathFinding {
 			}
 			for _, id := range ids {
 				idx.pathAmbiguous[id] = struct{}{}
-				delete(idx.pathByID, id)
+				idx.invalidatePathsUnder(id)
 			}
 			parentPath := idx.pathForParent(parentID)
 			if parentID == idx.org.RootID {
@@ -105,6 +105,13 @@ func (idx *Index) buildPaths() []PathFinding {
 		}
 	}
 	return findings
+}
+
+func (idx *Index) invalidatePathsUnder(ouID string) {
+	delete(idx.pathByID, ouID)
+	for _, childID := range idx.childrenByOU[ouID] {
+		idx.invalidatePathsUnder(childID)
+	}
 }
 
 func (idx *Index) pathForParent(parentID string) string {
@@ -135,16 +142,25 @@ func (idx *Index) OUByPath(path string) (OU, bool) {
 	if path == "/" {
 		return OU{ID: idx.org.RootID, Name: "", ParentID: ""}, true
 	}
+	var match OU
+	var count int
 	for id, p := range idx.pathByID {
-		if p == path {
-			if _, amb := idx.pathAmbiguous[id]; amb {
-				return OU{}, false
-			}
-			ou := idx.ouByID[id]
-			return ou, true
+		if p != path {
+			continue
+		}
+		if _, amb := idx.pathAmbiguous[id]; amb {
+			return OU{}, false
+		}
+		match = idx.ouByID[id]
+		count++
+		if count > 1 {
+			return OU{}, false
 		}
 	}
-	return OU{}, false
+	if count == 0 {
+		return OU{}, false
+	}
+	return match, true
 }
 
 // HasChildOUs reports whether the OU has any child OUs.
@@ -171,9 +187,6 @@ func (idx *Index) AccountOUChain(accountID string) ([]OU, bool) {
 	var chain []OU
 	cur := acct.ParentID
 	for cur != idx.org.RootID {
-		if _, amb := idx.pathAmbiguous[cur]; amb {
-			return nil, false
-		}
 		ou, ok := idx.ouByID[cur]
 		if !ok {
 			return nil, false

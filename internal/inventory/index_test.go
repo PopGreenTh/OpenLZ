@@ -55,3 +55,35 @@ func TestBuildIndexAmbiguousSiblingNames(t *testing.T) {
 		t.Fatal("ambiguous path should not resolve")
 	}
 }
+
+func TestBuildIndexNestedAmbiguousPath(t *testing.T) {
+	org := Organization{
+		ID:     "o-test",
+		RootID: "r-test",
+		OUs: []OU{
+			{ID: "ou-a1", Name: "Dup", ParentID: "r-test"},
+			{ID: "ou-b1", Name: "Dup", ParentID: "r-test"},
+			{ID: "ou-a1prod", Name: "Prod", ParentID: "ou-a1"},
+			{ID: "ou-b1prod", Name: "Prod", ParentID: "ou-b1"},
+		},
+		Accounts: []Account{
+			{ID: "111111111111", Name: "under-a", Status: "ACTIVE", ParentID: "ou-a1prod"},
+		},
+	}
+	idx, findings := BuildIndex(org)
+	if len(findings) != 1 {
+		t.Fatalf("findings = %+v", findings)
+	}
+	for i := 0; i < 200; i++ {
+		if _, ok := idx.OUByPath("/Dup/Prod"); ok {
+			t.Fatalf("OUByPath /Dup/Prod must not resolve (iteration %d)", i)
+		}
+	}
+	if got := idx.AccountPath("111111111111"); got != "" {
+		t.Fatalf("AccountPath = %q, want empty", got)
+	}
+	chain, ok := idx.AccountOUChain("111111111111")
+	if !ok || len(chain) != 2 || chain[0].ID != "ou-a1" || chain[1].ID != "ou-a1prod" {
+		t.Fatalf("AccountOUChain = %+v ok=%v", chain, ok)
+	}
+}
