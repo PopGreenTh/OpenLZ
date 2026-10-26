@@ -6,7 +6,7 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Step | Who | State |
 |---|---|---|
-| Review and accept this planning set (merge this branch) | Repo owner | waiting |
+| Review and merge the planning set, [PR #4](https://github.com/PopGreenTh/OpenLZ/pull/4) | Repo owner | waiting |
 | Answer [Q-001](DECISIONS.md#d-008) (multi-App cost split): by App tag, D-008 | Repo owner | done |
 | Confirm the [Q-002](DECISIONS.md#q-002) defaults (untagged, wrong App, matching) — not blocking | Repo owner | open |
 | Push tag `v1-reference` on `main` (`git tag v1-reference e41e24d && git push origin v1-reference`) | Repo owner | waiting |
@@ -17,7 +17,7 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
-| [WO-0101-A](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-a--skeleton-check-script-and-ci) | Cursor (proposed) | tag `v1-reference` | not started | — | — | — | 0 |
+| [WO-0101-A](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-a--skeleton-check-script-and-ci) | Cursor | PR #4 merged, tag `v1-reference` | to do | [#5](https://github.com/PopGreenTh/OpenLZ/issues/5) | — | — | 0 |
 | [WO-0101-B](DD-01-r1-account-mapping/WI-0101-Foundations-And-Taxonomy.md#wo-0101-b--taxonomy-model-yaml-loader-and-validation) | Antigravity (proposed) | WO-0101-A | not started | — | — | — | 0 |
 
 ### WI-0102 — Inventory discovery
