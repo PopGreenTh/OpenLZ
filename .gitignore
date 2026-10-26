@@ -1,11 +1,8 @@
 # Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-bin/
+/openlz
 openlz
+openlz.exe
+*.exe
 
 # DuckDB persistent cache
 *.duckdb
@@ -17,14 +14,12 @@ data/
 *.parquet
 *.csv
 *.xlsx
-*.m
 
-# Go workspace / test artifacts
+# Go workspace and test artifacts
 *.test
 *.out
 
 # Local cache and scratch
 /cache/
 scratch/
-
 ref/
