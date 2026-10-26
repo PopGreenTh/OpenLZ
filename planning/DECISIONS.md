@@ -135,3 +135,12 @@ Q-002 item 2).
 
 **Closed** by [D-010](#d-010) (item 2) and [D-011](#d-011) (items 1 and 3). Edge cases of the
 App-tag split (D-008): untagged cost, a tag naming an App the account doesn't serve, and matching.
+
+## D-012
+
+**Antigravity's models** (repo owner, 2026-10-26).
+
+- Antigravity implements Work Orders with **Gemini 3.8 Flash**; its planning runs on **Gemini 4
+  Argon**.
+- Both work as Antigravity, so a PR still opens with `Implementer: Antigravity`, and nothing in
+  the loop (AGENTS.md §4) changes.

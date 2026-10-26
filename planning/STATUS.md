@@ -24,13 +24,13 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
-| [WO-0102-A](DD-01-r1-account-mapping/WI-0102-Inventory-Discovery.md#wo-0102-a--aws-organization-discovery-and-mock) | open | WO-0101-B (met) | not started | — | — | — | 0 |
+| [WO-0102-A](DD-01-r1-account-mapping/WI-0102-Inventory-Discovery.md#wo-0102-a--aws-organization-discovery-and-mock) | open | WO-0101-B (met) | to do | [#12](https://github.com/PopGreenTh/OpenLZ/issues/12) | — | — | 0 |
 
 ### WI-0103 — Account mapping
 
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
-| [WO-0103-A](DD-01-r1-account-mapping/WI-0103-Account-Mapping.md#wo-0103-a--account-resolver) | open | WO-0101-B (met) | not started | — | — | — | 0 |
+| [WO-0103-A](DD-01-r1-account-mapping/WI-0103-Account-Mapping.md#wo-0103-a--account-resolver) | open | WO-0101-B (met); merges after WO-0102-A | to do | [#13](https://github.com/PopGreenTh/OpenLZ/issues/13) | — | — | 0 |
 
 ### WI-0104 — Cost allocation and reports
 
