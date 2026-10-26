@@ -246,6 +246,7 @@ func Validate(t *Taxonomy) []Finding {
 	}
 
 	// 5. Apps & Environments
+	knownEnvCodes := make(map[string]bool)
 	for _, app := range t.Apps {
 		if app == nil {
 			continue
@@ -317,6 +318,7 @@ func Validate(t *Taxonomy) []Finding {
 			if env == nil {
 				continue
 			}
+			knownEnvCodes[env.Code] = true
 			envPath := fmt.Sprintf("%s.environments[%s]", path, env.Code)
 			if !isCodeValid(env.Code) {
 				findings = append(findings, Finding{
@@ -386,6 +388,16 @@ func Validate(t *Taxonomy) []Finding {
 					File:     lz.File,
 				})
 			}
+		} else if lz.Default.App == "" && lz.Default.Environment != "" {
+			if !knownEnvCodes[lz.Default.Environment] {
+				findings = append(findings, Finding{
+					Severity: SeverityError,
+					Code:     "ref-unknown",
+					Path:     path + ".environment",
+					Message:  fmt.Sprintf("referenced default environment %q not defined under any app", lz.Default.Environment),
+					File:     lz.File,
+				})
+			}
 		}
 	}
 
@@ -411,6 +423,16 @@ func Validate(t *Taxonomy) []Finding {
 					Code:     "default-env-not-in-app",
 					Path:     path + ".environment",
 					Message:  fmt.Sprintf("default environment %q is not defined under app %q", t.Defaults.Environment, app.Code),
+					File:     t.Defaults.File,
+				})
+			}
+		} else if t.Defaults.App == "" && t.Defaults.Environment != "" {
+			if !knownEnvCodes[t.Defaults.Environment] {
+				findings = append(findings, Finding{
+					Severity: SeverityError,
+					Code:     "ref-unknown",
+					Path:     path + ".environment",
+					Message:  fmt.Sprintf("referenced default environment %q not defined under any app", t.Defaults.Environment),
 					File:     t.Defaults.File,
 				})
 			}
@@ -471,6 +493,29 @@ func Validate(t *Taxonomy) []Finding {
 			} else {
 				seenOUEnv[link.OU] = true
 			}
+
+			if link.App != "" {
+				app := appMap[link.App]
+				if app != nil && !app.HasEnvironment(link.Environment) {
+					findings = append(findings, Finding{
+						Severity: SeverityError,
+						Code:     "ref-unknown",
+						Path:     path + ".environment",
+						Message:  fmt.Sprintf("referenced environment %q not defined under app %q", link.Environment, link.App),
+						File:     link.File,
+					})
+				}
+			} else {
+				if !knownEnvCodes[link.Environment] {
+					findings = append(findings, Finding{
+						Severity: SeverityError,
+						Code:     "ref-unknown",
+						Path:     path + ".environment",
+						Message:  fmt.Sprintf("referenced environment %q not defined under any app", link.Environment),
+						File:     link.File,
+					})
+				}
+			}
 		}
 	}
 
@@ -482,7 +527,6 @@ func Validate(t *Taxonomy) []Finding {
 		}
 		path := fmt.Sprintf("accounts[%s]", acc.Account)
 
-		isInvalid := false
 		if !accountRegex.MatchString(acc.Account) {
 			findings = append(findings, Finding{
 				Severity: SeverityError,
@@ -491,7 +535,6 @@ func Validate(t *Taxonomy) []Finding {
 				Message:  fmt.Sprintf("account %q is not 12 digits", acc.Account),
 				File:     acc.File,
 			})
-			isInvalid = true
 		}
 		if seenAccounts[acc.Account] {
 			findings = append(findings, Finding{
@@ -501,7 +544,6 @@ func Validate(t *Taxonomy) []Finding {
 				Message:  fmt.Sprintf("duplicate account %q listed in accounts", acc.Account),
 				File:     acc.File,
 			})
-			isInvalid = true
 		} else {
 			seenAccounts[acc.Account] = true
 		}
@@ -514,11 +556,6 @@ func Validate(t *Taxonomy) []Finding {
 				Message:  "account entry must set at least one of environment or apps",
 				File:     acc.File,
 			})
-			isInvalid = true
-		}
-
-		if isInvalid && !seenAccounts[acc.Account] {
-			continue
 		}
 
 		seenAccApps := make(map[string]bool)
@@ -549,22 +586,34 @@ func Validate(t *Taxonomy) []Finding {
 			}
 		}
 
-		// account-env-not-in-app
-		if acc.Environment != "" && len(acc.Apps) > 0 {
-			for _, accApp := range acc.Apps {
-				if accApp == nil {
-					continue
+		// account environment checks
+		if acc.Environment != "" {
+			if len(acc.Apps) > 0 {
+				for _, accApp := range acc.Apps {
+					if accApp == nil {
+						continue
+					}
+					app := appMap[accApp.App]
+					if app != nil && !app.HasEnvironment(acc.Environment) {
+						findings = append(findings, Finding{
+							Severity: SeverityError,
+							Code:     "account-env-not-in-app",
+							Path:     path + ".environment",
+							Message:  fmt.Sprintf("environment %q is not defined under app %q", acc.Environment, app.Code),
+							File:     acc.File,
+						})
+						break // report once per account
+					}
 				}
-				app := appMap[accApp.App]
-				if app != nil && !app.HasEnvironment(acc.Environment) {
+			} else {
+				if !knownEnvCodes[acc.Environment] {
 					findings = append(findings, Finding{
 						Severity: SeverityError,
-						Code:     "account-env-not-in-app",
+						Code:     "ref-unknown",
 						Path:     path + ".environment",
-						Message:  fmt.Sprintf("environment %q is not defined under app %q", acc.Environment, app.Code),
+						Message:  fmt.Sprintf("referenced environment %q not defined under any app", acc.Environment),
 						File:     acc.File,
 					})
-					break // report once per account
 				}
 			}
 		}
