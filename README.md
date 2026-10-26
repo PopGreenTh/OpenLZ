@@ -56,6 +56,22 @@ Live discovery uses these IAM actions on the management account (or a delegated 
 - `organizations:ListOrganizationalUnitsForParent`
 - `organizations:ListAccountsForParent`
 
+### Cost commands
+
+Collect raw monthly cost (demo fixture offline):
+
+```bash
+./openlz cost sense --mock [--out data/cost_raw.parquet]
+```
+
+Allocate raw cost through the account map:
+
+```bash
+./openlz cost allocate [--map data/account_map.json] [--raw data/cost_raw.parquet] [--out data/cost_allocated.parquet]
+```
+
+Live Cost Explorer reads require `ce:GetCostAndUsage` and `organizations:DescribeOrganization`, plus the App cost allocation tag activated in AWS Billing.
+
 ### Account mapping
 
 Resolve discovered accounts to Project › App › Environment (requires valid taxonomy and inventory):
