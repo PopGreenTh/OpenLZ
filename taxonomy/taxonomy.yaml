@@ -1,0 +1,53 @@
+business_units:
+  - code: BU-RETAIL
+    name: Retail
+
+cost_centers:
+  - code: CC-ECOM
+    name: E-commerce
+    business_unit: BU-RETAIL
+
+projects:
+  - code: PRJ-SHOP
+    name: Online shop
+    business_unit: BU-RETAIL
+    lzs:
+      - LZ-MAIN
+
+apps:
+  - code: APP-CHK
+    name: Checkout
+    project: PRJ-SHOP
+    cost_center: CC-ECOM
+    environments:
+      - code: ENV-PROD
+        name: Production
+      - code: ENV-DEV
+        name: Development
+
+lzs:
+  - code: LZ-MAIN
+    name: Main AWS organization
+    csp: AWS
+    currency: USD
+    management_account: "111111111111"
+    default:
+      app: APP-CHK
+      environment: ENV-PROD
+
+defaults:
+  app: APP-CHK
+  environment: ENV-DEV
+
+ou_links:
+  - ou: /Workloads/Checkout
+    app: APP-CHK
+
+accounts:
+  - account: "222222222222"
+    environment: ENV-PROD
+    apps:
+      - app: APP-CHK
+
+cost_allocation:
+  app_tag: App
