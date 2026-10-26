@@ -25,6 +25,22 @@ CloudValueDelta can adopt it unchanged.
 Implementers never edit `planning/` or this file. If the spec is wrong, contradicts itself or is
 unclear, **stop and say so** in the PR or issue; Claude fixes the spec.
 
+### Stand-in planner: Gemini 4 Argon ([D-012](planning/DECISIONS.md#d-012))
+
+When Claude is out of usage quota, Gemini 4 Argon in Antigravity runs the loop in Claude's place.
+
+- **Start and end.** Only on the repo owner's word ("stand in for Claude" / "Claude is back").
+  The stand-in then sets the `Planner:` line at the top of `planning/STATUS.md`.
+- **May:** dispatch a Work Order that is already written, on the repo owner's go-ahead (§4 step 1);
+  review PRs against *Done when* (§4 step 6); update `planning/STATUS.md`.
+- **May not:** write or change decisions, Deliverables, Work Items, Work Orders, reference cases,
+  `docs/taxonomy-spec.md`, this file, `CLAUDE.md` or `GEMINI.md`. A question that needs any of
+  those waits for Claude: note it on the issue or PR and mark the row `blocked: Claude` in STATUS.
+- **Flag every review.** The review starts with `Stand-in review (Gemini 4 Argon)`. If Antigravity
+  implemented the PR, it adds `self-review`. Merge still needs the repo owner's go-ahead.
+- **Handback.** When Claude is back, it reads the `Planner:` line, checks each flagged review
+  (self-reviews first), and resets the line.
+
 ## 3. The work hierarchy
 
 **Deliverable (one release) › Work Item › Work Order › Task.**

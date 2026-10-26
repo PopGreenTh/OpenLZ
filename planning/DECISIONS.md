@@ -131,6 +131,19 @@ Q-002 item 2).
   spaces (`app-chk` = `APP-CHK`). App names are not matched. This applies to both the D-008
   split and the D-010 wrong-App check.
 
+## D-012
+
+**Gemini 4 Argon stands in for Claude when Claude is out of quota** (repo owner, 2026-10-26).
+
+- It runs in Antigravity, and only between the repo owner's "stand in for Claude" and "Claude is
+  back". The `Planner:` line in `STATUS.md` shows who is planning.
+- It runs the loop only: dispatches Work Orders that are already written (on the repo owner's
+  go-ahead), reviews PRs against *Done when*, and keeps `STATUS.md` current. New decisions,
+  Work Items, Work Orders, reference cases and spec changes wait for Claude.
+- It may review a PR that Antigravity implemented. Every stand-in review is flagged, a
+  self-review is flagged as such, and Claude re-checks them all on return.
+- Rules: [AGENTS.md §2](../AGENTS.md#stand-in-planner-gemini-4-argon-d-012).
+
 ## Q-002
 
 **Closed** by [D-010](#d-010) (item 2) and [D-011](#d-011) (items 1 and 3). Edge cases of the

@@ -1,6 +1,9 @@
 # Status
 
-Written by Claude only. Status values: see [README.md](README.md#status-values).
+Written by Claude only, or by the stand-in planner while it stands in ([D-012](DECISIONS.md#d-012)).
+Status values: see [README.md](README.md#status-values).
+
+**Planner:** Claude
 
 ## Before dispatch
 
