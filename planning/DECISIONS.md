@@ -286,8 +286,8 @@ Q-003).
 
 ## Q-004
 
-**Open: details for Enrich, Analyze, Enforce and Report** (planner, 2026-10-27). Blocks WI-0204,
-WI-0205 and WI-0206; item 5 also blocks WI-0203. WI-0202 is not blocked.
+**Partly closed** by [D-023](#d-023) (items 1, 2, 5); items 3 and 4 move to [Q-005](#q-005).
+Details for Enrich, Analyze, Enforce and Report (planner, 2026-10-27).
 
 1. Report append: does each run add its rows to the end of the same CSV file and the same Excel
    sheet, building one growing table? Or should Excel get a new sheet per run?
@@ -298,3 +298,31 @@ WI-0205 and WI-0206; item 5 also blocks WI-0203. WI-0202 is not blocked.
 4. Metric: always the D-022 metric for the grain, or may `--metric` override it?
 5. As-reported history needs the taxonomy as it was. Should Enrich save each taxonomy it uses
    under `data/history/` (recommended), or should OpenLZ read old versions from git?
+
+## D-023
+
+**Report appends to one table; rollup is its own Analyze command; Enrich saves each taxonomy it
+uses; a spike has four impact levels against a baseline** (repo owner, 2026-10-27; answers Q-004
+items 1, 2, 5 and part of 3).
+
+- **Append.** Each Report run adds its rows to the end of the same CSV file, or the same Excel
+  sheet, building one growing table. A header is written only when the file or sheet is new.
+- **Rollup** is `analyze rollup`, beside `analyze changes` and `analyze trend`. Commands of the
+  same stage pipe into each other like any others (`analyze rollup | analyze trend`).
+- **Taxonomy history.** Enrich saves a copy of each taxonomy it uses under `data/history/`,
+  named by its hash, and stamps every record it writes with `taxonomy_hash`. As-reported
+  analysis (D-016) reads those copies; it never reads git.
+- **Cost spike.** A spike is measured against a baseline and graded in **four impact levels** by
+  a power factor. The baseline, the factor and the level bounds: Q-005.
+
+## Q-005
+
+**Open: spike levels, cost metric, and reading earlier runs** (planner, 2026-10-27). Item 1
+blocks WI-0205, item 2 blocks WO-0202-B, item 3 blocks WI-0203 to WI-0206.
+
+1. Spike: baseline = the average of the 3 months before; factor = amount ÷ baseline; levels by
+   powers of 2: level 1 ≥ 1.25×, level 2 ≥ 1.5×, level 3 ≥ 2×, level 4 ≥ 4×; a month less
+   than 100 USD above its baseline is never a spike. Right?
+2. Metric: fixed by grain (D-022), or `--metric` allowed to override it?
+3. Reading earlier runs: may every stage save its output (not only Sense), and may every stage
+   read a saved run instead of stdin with `--from-history`?

@@ -142,7 +142,7 @@ its run under `data/history/`.
 ## WO-0202-B — `sense cost`, keyed cache and mock cost
 
 **Assignee:** open
-**Depends on:** WO-0202-A; dispatched after Q-004 item 4 (whether `--metric` may override the
+**Depends on:** WO-0202-A; dispatched after Q-005 item 2 (whether `--metric` may override the
 metric)
 **Packages:** `finops/sense/`, `aws/` (Cost Explorer client and mock), `README.md`
 

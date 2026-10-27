@@ -26,7 +26,7 @@ mapping and App-tag rules of DD-01 still hold (D-005, D-007, D-008, D-010, D-011
   - Sense: accounts (AWS Organizations) and cost (Cost Explorer: monthly unblended for at least
     24 months, daily amortized), with the keyed cache.
   - Enrich: map accounts and cost to the taxonomy.
-  - Analyze: `changes` and `trend`, over saved history, restated or as reported.
+  - Analyze: `rollup`, `changes` and `trend`, over saved history, restated or as reported.
   - Enforce: one command per rule (unmapped account, untagged shared cost, wrong App tag, cost
     spike), flags with actionable information.
   - Report: table, CSV and Excel, appending to an existing file.
@@ -42,12 +42,12 @@ cloud; Markdown, Power BI and REST; any UI; currency conversion; resource-level 
 |---|---|---|---|
 | [WI-0201](WI-0201-Restructure.md) | Move today's code to the D-017 layout; `openlz-finops` | A | specified |
 | [WI-0202](WI-0202-Sense.md) | `finops/sense`: accounts and cost; the shared record rules and history store | A, B | specified |
-| WI-0203 | `finops/enrich`: map records to the taxonomy, App-tag split | — | blocked by Q-004 item 5 |
-| WI-0204 | `finops/analyze`: `changes` and `trend` | — | blocked by Q-004 |
-| WI-0205 | `finops/enforce`: one command per rule | — | blocked by Q-004 |
-| WI-0206 | `finops/report`: table, CSV, Excel, append | — | blocked by Q-004 |
+| WI-0203 | `finops/enrich`: map records to the taxonomy, App-tag split | — | blocked by Q-005 item 3 |
+| WI-0204 | `finops/analyze`: `rollup`, `changes` and `trend` | — | blocked by Q-005 |
+| WI-0205 | `finops/enforce`: one command per rule | — | blocked by Q-005 |
+| WI-0206 | `finops/report`: table, CSV, Excel, append | — | blocked by Q-005 |
 
-WI-0203 to WI-0206 are written once Q-004 is answered. WI-0202 defines the record rules and the
+WI-0203 to WI-0206 are written once Q-005 is answered. WI-0202 defines the record rules and the
 history store (D-015, D-016) that every later stage follows.
 
 ## Order
