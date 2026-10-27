@@ -1,5 +1,9 @@
 # WI-0104 — Cost allocation and reports
 
+> **Withdrawn** (D-018, 2026-10-27). Neither Work Order was dispatched. The scope moves to DD-02
+> as stage Work Items (Sense cost, Enrich, Analyze, Report). The contracts below are kept as
+> input for those Work Items, not as a spec to build.
+
 ## Outcome
 
 Monthly AWS spend per linked account is read from Cost Explorer (or the mock), allocated through

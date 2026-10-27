@@ -144,3 +144,124 @@ App-tag split (D-008): untagged cost, a tag naming an App the account doesn't se
   Argon**.
 - Both work as Antigravity, so a PR still opens with `Implementer: Antigravity`, and nothing in
   the loop (AGENTS.md §4) changes.
+
+## D-013
+
+**OpenLZ becomes small, pipeable stage commands, one binary per domain; FinOps first** (repo
+owner, 2026-10-27).
+
+- Each domain is one binary, `openlz-<domain>`, whose commands are `<stage> <thing>`:
+  `openlz-finops sense cost`, `openlz-finops enrich map`. Commands read records on stdin and
+  write records on stdout, so they chain with `|`.
+- FinOps is the first and only domain built until a later decision adds another (SecOps and
+  CloudOps, as in `v1-reference`).
+- Supersedes AGENTS.md's "one binary `openlz`". The single-tenant rule (no tenant anywhere)
+  holds.
+
+## D-014
+
+**The five stages of `v1-reference`, in the order Sense › Enrich › Analyze › Enforce › Report**
+(repo owner, 2026-10-27).
+
+| Stage | Job |
+|---|---|
+| **Sense** | Read a provider API (or `--mock`) and emit raw records |
+| **Enrich** | Add taxonomy context: LZ, Project, App, Environment, BusinessUnit, CostCenter |
+| **Analyze** | Group, compare and trend records, including over history (D-016) |
+| **Enforce** | Flag records that break a rule; it never changes the cloud |
+| **Report** | Turn records into something people read: table, CSV, Markdown |
+
+- Enrich runs before Analyze, unlike `v1-reference`, so analysis can group by App or Project.
+- An Enforce flag carries the actionable information needed to fix it: what is wrong, on which
+  subject (account, App, …), how much cost it touches, and the action to take. Enforce passes
+  every record through and adds its flags; it makes no cloud call that changes anything.
+
+## D-015
+
+**Records between stages are flat JSON Lines; results are cached by their key** (repo owner,
+2026-10-27).
+
+- One JSON object per line, flat: no nested objects or arrays. Each record has a `kind` field.
+- A stage that calls a provider writes **cache records**, keyed either by the record's unique
+  key or by a hash of the call's major parameters (for Cost Explorer: account scope, metric,
+  granularity, group-by and month). A later call whose key matches is served from the cache, so
+  it costs nothing.
+- Report is the only stage that writes anything other than JSON Lines.
+
+## D-016
+
+**History: both restated and as-reported, at least 24 months of cost, saved locally by major
+parameters, on a schedule and by hand** (repo owner, 2026-10-27).
+
+- **Restating.** By default, analysis applies the current taxonomy to every period. With
+  `--as-reported`, each period uses the snapshot that was current then (taxonomy spec §8.2).
+- **Depth.** Cost history goes back at least 24 months. Cost Explorer returns about 14 months
+  unless multi-year data is turned on in AWS Billing (up to 38 months), so the repo owner turns
+  it on; until then a run reports how many months were actually available.
+- **Saving.** Every Sense run saves its output under `data/history/`, in a path named by the run's
+  major parameters (the same ones as the D-015 cache key) and dated. Saved files are append-only
+  and never rewritten. *Planner's reading:* the D-015 cache and this history are one store.
+- **Where.** Local, under `data/` (gitignored). No git, S3 or database server.
+- **When.** By hand, and on a schedule with cron. OpenLZ ships an example crontab line; it does
+  not install a scheduler.
+- Supersedes DD-01's "re-attribution history out of scope".
+
+## D-017
+
+**The repo is laid out as `<domain>/<stage>/` plus one folder per cloud provider, each with its
+own `testdata/`** (repo owner, 2026-10-27).
+
+- `finops/sense/`, `finops/enrich/`, `finops/analyze/`, `finops/enforce/`, `finops/report/`.
+  `finops/` itself holds the `openlz-finops` binary.
+- Provider folders at the top: `aws/`, `azure/`, `gcp/`, `oci/`. They hold the provider
+  clients, the retry wrapper and the mocks. *Planner's reading:* a provider folder is created by
+  the first Work Order that needs it; DD-02 builds `aws/` only (Q-003).
+- No `cmd/` or `internal/`. Every package keeps its fixtures in its own `testdata/`.
+- Reference cases live in the `testdata/` of the package that reads them, no longer under
+  `planning/`. They stay Claude's: implementers never edit them (AGENTS.md §4). No CODEOWNERS
+  rule.
+
+## D-018
+
+**DD-01 stops; the pivot is DD-02, starting with one restructure PR** (repo owner, 2026-10-27).
+
+- DD-01 closes with WO-0101-A, WO-0101-B, WO-0102-A and WO-0103-A merged. WO-0104-A and
+  WO-0104-B are withdrawn; their scope moves to DD-02.
+- DD-02's first Work Order moves all of today's code into the D-017 layout in one PR, before
+  any new stage is built.
+- D-005, D-007, D-008, D-010 and D-011 (mapping and App-tag rules) still hold.
+
+## D-019
+
+**Planning keeps its hierarchy and a separate decision log** (repo owner, 2026-10-27).
+
+- Deliverable = one release. A Work Item is one domain stage (`finops/sense`) or one piece of
+  work at the same level (the restructure, a provider folder). Work Orders stay as they are.
+- `DECISIONS.md` stays its own file.
+
+## D-020
+
+**`CLAUDE.md` and `GEMINI.md` only point to `AGENTS.md`** (repo owner, 2026-10-27). Every rule,
+including each agent's duties, lives in `AGENTS.md`.
+
+## D-021
+
+**OpenLZ goes its own way: it is no longer CloudValueDelta's proving ground** (repo owner,
+2026-10-27).
+
+- Supersedes the proving-ground part of D-001; the rebuild and the `v1-reference` rule stay.
+- From now on nothing in OpenLZ refers to CloudValueDelta, and decisions are not passed on to
+  CloudValueDelta-Plan. Earlier decisions keep their wording as history.
+
+## Q-003
+
+**Open: what DD-02's stages need before their Work Items are specified** (planner, 2026-10-27).
+Blocks WI-0202 to WI-0206, not WO-0201-A.
+
+1. Provider folders: create only `aws/` now, or empty `azure/`, `gcp/` and `oci/` too?
+2. Sense cost grain: monthly only, as in DD-01, or daily too?
+3. Analyze in DD-02: which of rollup, trend (month over month), diff (two snapshots) and
+   movement (cost that moved because the taxonomy changed)?
+4. Enforce in DD-02: which rules? For example unmapped account, untagged shared-account cost,
+   wrong App tag, cost spike.
+5. Report formats in DD-02: table, CSV and Markdown; is Excel needed now?

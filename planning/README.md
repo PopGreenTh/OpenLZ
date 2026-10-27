@@ -9,13 +9,13 @@ Read [`AGENTS.md`](../AGENTS.md) first; this file adds the detail behind its §3
 | [`DECISIONS.md`](DECISIONS.md) | Numbered decisions (`D-NNN`) and open questions (`Q-NNN`) | Claude, on the repo owner's answer |
 | [`STATUS.md`](STATUS.md) | One row per Work Order: status, assignee, issue, PR, branch | Claude |
 | `DD-NN-<slug>/DELIVERABLE.md` | One release: goal, scope, Work Items, release criteria | Claude |
-| `DD-NN-<slug>/WI-NNNN-<Name>.md` | One capability: Outcome, Scope, Contracts, Work Orders, Acceptance | Claude |
-| `DD-NN-<slug>/cases/*.yaml` | Reference cases: input plus expected output, read by tests unchanged | Claude |
+| `DD-NN-<slug>/WI-NNNN-<Name>.md` | One domain stage, or one piece of work at the same level: Outcome, Contracts, Work Orders | Claude |
+| `<package>/testdata/cases/` | Reference cases: input plus expected output, read by tests unchanged (D-017) | Claude |
 | [`../docs/taxonomy-spec.md`](../docs/taxonomy-spec.md) | The full target taxonomy (v3) that releases converge on | Claude |
 
 ## IDs
 
-- `DD-NN` — Deliverable = one release (`DD-01` = Release 1).
+- `DD-NN` — Deliverable = one release (`DD-01` = Release 1, `DD-02` = Release 2).
 - `WI-NNNN` — Work Item; the first two digits are its Deliverable (`WI-0103` is in DD-01).
 - `WO-NNNN-X` — Work Order, a lettered section of its Work Item (`WO-0103-A`).
 - IDs are never reused or renumbered.
@@ -43,7 +43,8 @@ Read [`AGENTS.md`](../AGENTS.md) first; this file adds the detail behind its §3
 ## Sizing
 
 A Work Order is one PR a reviewer can read in one sitting: roughly 300–1,200 changed lines,
-one package area. Bigger → split it. Two Work Orders that touch the same package never run at the
+one package area. Bigger → split it, except a pure move
+(such as WO-0201-A), which changes no behaviour. Two Work Orders that touch the same package never run at the
 same time.
 
 ## Status values
@@ -56,6 +57,7 @@ same time.
 | `in review` | PR ready for review |
 | `changes` | Review asked for changes |
 | `merged` | PR merged |
+| `withdrawn` | Dropped by a decision before it was built |
 
 ## Grill before spec
 
@@ -66,8 +68,8 @@ dispatched until they are answered.
 
 ## Reference cases
 
-Reference cases are the shared contract between implementers. Each case is a YAML file with the
-inputs (inventory, taxonomy, cost) and the expected output. The implementing Work Order's test
+Reference cases are the shared contract between implementers. They live in the `testdata/cases/`
+folder of the package that reads them (D-017); each case holds the inputs and the expected output. The implementing Work Order's test
 reads every case file in place; it never copies or edits them. A case that looks wrong is
 reported, and Claude fixes the case and records why.
 

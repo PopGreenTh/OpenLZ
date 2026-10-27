@@ -2,7 +2,7 @@
 
 > Status: **agreed design** (2026-10-14). It replaces the single Project hierarchy of v2 with three
 > hierarchies — **Biz**, **Project**, **Cloud** — and adds the mechanism that keeps attributions
-> current (CloudValueDelta, §8). OpenLZ supports a **single tenant**. Implementation status and
+> current (§8). OpenLZ supports a **single tenant**. Implementation status and
 > remaining work: `docs/handoff/finops-taxonomy-v2.md`. Attribution engine: `internal/attribution`.
 
 ## 1. Notation
@@ -161,9 +161,9 @@ codes, so it cannot be a path that does not exist.
 - Amounts in different currencies are never summed as-is. A roll-up across LZs converts to one
   reporting currency first, or shows each currency separately.
 
-## 8. Keeping attributions current: CloudValueDelta
+## 8. Keeping attributions current
 
-**CloudValueDelta** is the set of Cloud-side changes since the last run. It decides what is
+The **delta** is the set of Cloud-side changes since the last run. It decides what is
 re-attributed, so history is never recomputed blindly and nothing is lost when mappings change.
 
 ### 8.1 Two kinds of change

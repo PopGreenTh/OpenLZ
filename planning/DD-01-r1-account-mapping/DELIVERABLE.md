@@ -1,5 +1,10 @@
 # DD-01 — Release 1: LZ, OU and Account mapped to Project, App and Environment
 
+> **Closed early** (D-018, 2026-10-27). WO-0101-A, WO-0101-B, WO-0102-A and WO-0103-A merged;
+> WI-0104 is withdrawn and its scope moves to [DD-02](../DD-02-r2-finops-stages/DELIVERABLE.md).
+> The release criteria below were not all met and no Release 1 tag is cut. The reference cases
+> move to `finops/enrich/testdata/cases/` in WO-0201-A.
+
 ## Goal
 
 A FinOps analyst describes their Projects, Apps and Environments in YAML, links them to the
