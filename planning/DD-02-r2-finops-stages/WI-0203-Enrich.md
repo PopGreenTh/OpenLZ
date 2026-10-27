@@ -19,11 +19,13 @@ Account resolution is DD-01 [WI-0103](../DD-01-r1-account-mapping/WI-0103-Accoun
 
 ### `enrich map`
 
-`openlz-finops enrich map [--taxonomy DIR] [--accounts <stage>/<thing>[@ts]] [--as-reported] [--from-history …] [--save=true]`
+`openlz-finops enrich map [--taxonomy DIR] [--as-reported] [--from-history …]... [--save=true]`
 
-- **Organization input.** The `ou` and `account` records on stdin. When stdin has none, the
-  saved run named by `--accounts` (default `sense/accounts`, newest) is read; the file read is
-  printed to stderr. Neither → error.
+- **Organization input.** The `ou` and `account` records in the input (stdin or any
+  `--from-history`, D-025). When the input has none, the newest saved `sense/accounts` run is
+  read automatically; the file read is printed to stderr. Neither → error.
+- **Cost input.** The `cost` records in the input. None is fine: the output then has the
+  `allocation` records only.
 - **Output**, in this order:
   1. every `ou` and `account` record, unchanged;
   2. one `allocation` record per account and App: `account_id`, `account_name`, `lz`,
@@ -78,7 +80,7 @@ Apps with `cost_allocation.app_tag`, and one account left unmapped. It passes
 - `enrich map` as specified, with `--save` and `--from-history`.
 - The old `--inventory` input and `account_map.json` output of `map` are removed.
 - The demo taxonomy above.
-- Tests: every reference case passes unchanged; organization from stdin and from history;
+- Tests: every reference case passes unchanged; organization from stdin, from `--from-history sense/accounts`, and found automatically;
   conservation failure on a hand-broken allocation; the taxonomy copy is written once;
   `--as-reported` picks the right snapshots and raises `as-reported-fallback`.
 
@@ -90,7 +92,9 @@ Apps with `cost_allocation.app_tag`, and one account left unmapped. It passes
   prints `allocation` and allocated `cost` records, and the shared account's cost is split by
   the App tag.
 - The `--as-reported` and conservation tests pass.
-- README shows the command, the record fields and the two ways to give it the organization.
+- `openlz-finops enrich map --from-history sense/cost --from-history sense/accounts` after a saved
+  mock run gives the same records as the pipeline above.
+- README shows the command, the record fields and the three ways to give it the organization.
 
 **Verify.** `go run -tags=no_duckdb_arrow ./scripts/check` and
 `go run -tags=no_duckdb_arrow ./finops sense cost --mock --save=false | go run -tags=no_duckdb_arrow ./finops enrich map --save=false | head`

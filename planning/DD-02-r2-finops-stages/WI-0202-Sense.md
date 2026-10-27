@@ -118,10 +118,13 @@ data/history/finops/<stage>/<thing>/<params>/<timestamp>.jsonl
   `,`, with defaults written out. If that is longer than 100 characters, or holds a character
   outside `A-Z a-z 0-9 . _ = , -`, it is the first 16 hex characters of its SHA-256 instead.
   Each stage's Work Item lists its major parameters.
-- **`--from-history <stage>/<thing>[@<timestamp>]`**, on every command that reads stdin, reads
-  that saved run instead of stdin: the given timestamp, or the newest run of that command over
-  all its `<params>`. The file read is printed to stderr. Reading history is never saved again
-  as a new run of the source command.
+- **`--from-history <stage>/<thing>[@<timestamp>]`**, on every command that reads stdin, adds
+  that saved run's records to the input: the given timestamp, or the newest run of that command
+  over all its `<params>`. It may be **repeated**, so a command that needs several kinds of
+  record can take each from its own run (`enrich map --from-history sense/cost --from-history
+  sense/accounts`). Input order: the saved runs in the order given, then stdin when stdin is a
+  pipe or a file (never a terminal). Each file read is printed to stderr. Reading history is
+  never saved again as a new run of the source command (D-025).
 
 **Both stores.**
 - `--save=false` writes nothing and reads no cache (for tests and dry runs).
@@ -154,7 +157,7 @@ its run; `record/` gives every later stage saving and `--from-history`.
 - Unit tests: a nested value is rejected; unknown `kind`s pass through unchanged and in order; a
   malformed line is reported by number; the store never overwrites a file; `<params>` naming
   (sorted, defaults written, hashed when long); `--from-history` picks the newest run or the
-  given timestamp.
+  given timestamp, and repeated flags plus stdin give the records in the stated order.
 
 **Out of scope.** `sense cost` (WO-0202-B). Reading these records in other stages (WI-0203+).
 

@@ -342,3 +342,13 @@ saves its output and can read a saved run** (repo owner, 2026-10-27; answers Q-0
   a saved run instead with `--from-history <stage>/<thing>[@<timestamp>]`.
 - Supersedes D-016's planner's reading that cache and history are one store: the provider cache
   is `data/cache/`, stage history is `data/history/` (WI-0202).
+
+## D-025
+
+**The spike floor defaults to 30; `--from-history` can be repeated** (repo owner, 2026-10-27).
+
+- The spike floor (D-024) defaults to **30** in the record's currency, instead of 100.
+- A stage may need several kinds of record from different runs; Enrich needs accounts to enrich
+  cost. So `--from-history` may be given more than once, each adding one saved run to the
+  input, and it may be combined with stdin. `enrich map`'s separate `--accounts` flag is
+  dropped (WI-0202, WI-0203).

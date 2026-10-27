@@ -8,7 +8,7 @@ several (D-022). Enforce never calls the cloud.
 
 ## Contracts
 
-`openlz-finops enforce RULE [RULE...] [--floor 100] [--by FIELDS]`
+`openlz-finops enforce RULE [RULE...] [--floor 30] [--by FIELDS]`
 
 - Every input record passes through unchanged, in order; the `flag` records follow.
 - One `flag` record per subject, rule and period:
@@ -32,7 +32,7 @@ several (D-022). Enforce never calls the cloud.
 | `unmapped` | allocated `cost` | cost at `APP-UNALLOC`, `ENV-UNALLOC` or `ENV-UNSPEC`, per account and period. Action: add the account entry or OU link |
 | `untagged` | allocated `cost` | shared-account cost with `share_rule` `untagged-equal`, per account and period. Action: tag the resources with the App tag |
 | `wrong-tag` | allocated `cost` | cost with `app_rule` `invalid`, per account, tag value and period. Action: fix the tag value or add the App to the account |
-| `spike` | `cost` or `rollup` | D-024: grouped by `--by` (default `account_id`), baseline = average of the 3 periods before, factor = amount ÷ baseline; only when amount − baseline ≥ `--floor`; level 1 at factor ≥ 2, 2 at ≥ 4, 3 at ≥ 8, 4 at ≥ 16. `cost` is amount − baseline. Action: review the subject's cost for the period |
+| `spike` | `cost` or `rollup` | D-024, D-025: grouped by `--by` (default `account_id`), baseline = average of the 3 periods before, factor = amount ÷ baseline; only when amount − baseline ≥ `--floor`; level 1 at factor ≥ 2, 2 at ≥ 4, 3 at ≥ 8, 4 at ≥ 16. `cost` is amount − baseline. Action: review the subject's cost for the period |
 
 - An unknown rule name is an error that lists the rules. Rules run in the order named; a flag
   is never raised twice for the same rule, subject and period.
