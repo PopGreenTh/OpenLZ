@@ -367,3 +367,28 @@ saves its output and can read a saved run** (repo owner, 2026-10-27; answers Q-0
   the pipe first, then its flag, then its own default. The same kind from the pipe and a flag is
   an error.
 - Supersedes the `--from-history` parts of D-024 and D-025; D-025's floor of 30 stands.
+
+## D-027
+
+**The rebuild moves to a new repository, OpenXOps; OpenLZ is archived** (repo owner,
+2026-10-27).
+
+- The tool is rebuilt in a new repository, `OpenXOps`, as a multi-domain tool (FinOps first,
+  then SecOps and CloudOps, D-013).
+- This repository, OpenLZ, is archived (read-only) once OpenXOps is seeded. It stays readable as
+  the reference that tag `v1-reference` was.
+- Binary names and how a command chooses its cloud provider: Q-006. What OpenXOps is seeded
+  with: Q-006.
+
+## Q-006
+
+**Open: OpenXOps binaries, cloud providers and seed** (planner, 2026-10-27). Blocks every DD-02
+dispatch.
+
+1. Binaries: `xops` for commands shared by every domain (Report, history, version) plus one
+   binary per domain, `finops`, `secops`, `cloudops`? Or one binary, `xops finops sense cost`?
+2. Provider: chosen per LZ from the taxonomy (`csp`), with `--csp` to override, and only Sense
+   aware of it?
+3. Seed: carry the code, `planning/` (decisions keep their numbers) and reference cases over
+   from OpenLZ; review and merge PR #21 first so its allocation engine comes along?
+4. Who creates the OpenXOps repository: the repo owner, or Claude on the owner's go-ahead?
