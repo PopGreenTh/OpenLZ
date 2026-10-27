@@ -168,3 +168,14 @@ counterpart of CloudValueDelta-Plan's D-091).
   Claude Code reads it first in its next session and spot-checks the reviews.
 - Differences from CloudValueDelta-Plan's D-091: no ClickUp mirror or implementation notes exist
   here, and the stand-in never merges, since OpenLZ has no auto mode.
+
+## D-014
+
+**A deterministic state log for Claude Code and Argon** (repo owner, 2026-10-27).
+
+- Both agents log every step to `.state/tasks.jsonl`: claim with `RUNNING`, finish with
+  `COMPLETED` (exit code and hash) or `FAILED` (exact error), and stop on failure. The repo
+  owner's protocol text is AGENTS.md §8.1–§8.3, verbatim.
+- Claude added §8.4 after verifying it: the file is per machine and uncommitted, since the two
+  agents share no filesystem, so locking between them stays with the GitHub claim (§4) and the
+  stand-in session rule (D-013). Fixed field names, and only the repo owner clears a stale lock.

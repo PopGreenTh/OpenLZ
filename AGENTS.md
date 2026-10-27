@@ -108,3 +108,35 @@ not: list it in the hand-back.
   (verdict and link), every PR skipped and why, and every spec gap or question for the repo owner.
 - **Stop and tell the repo owner** when a PR needs a spec change or a decision, or when the only
   PRs waiting are Antigravity's.
+
+## 8. Multi-Agent Deterministic State Protocol (Claude Code & Antigravity Argon) ([D-014](planning/DECISIONS.md#d-014))
+
+### 8.1 Out-of-Band State Persistence
+- NEVER rely on conversational memory or internal scratchpads for multi-step progress.
+- All state transitions MUST be persisted atomically to `.state/tasks.jsonl`.
+- Before executing any tool or file mutation, read the tail of `.state/tasks.jsonl` to verify
+  current state and lock status.
+
+### 8.2 Concurrency & Agent Locking
+- Before starting a `PENDING` task, append a `RUNNING` record claiming the `task_id` with your
+  runtime identifier (`"agent": "claude-code"` or `"agent": "agy-argon"`).
+- Do not modify files listed in another task's active `RUNNING` record.
+
+### 8.3 Transition Lifecycle
+1. **Claim:** Append `status: "RUNNING"` with target file paths.
+2. **Execute:** Perform minimal-diff edits or non-interactive CLI test runs (`CI=true`).
+3. **Commit State:** Append `status: "COMPLETED"` (with exit code `0` and short git/file hash) or
+   `status: "FAILED"` (with exact error snippet).
+4. **Halt on Failure:** On `FAILED`, stop execution immediately. Do not wipe prior state or
+   hallucinate retries outside the logged state.
+
+### 8.4 How it fits OpenLZ
+- **Record fields:** `ts`, `task_id`, `agent`, `status`, `files`, and on completion `exit` and
+  `hash`, or on failure `error`. One JSON object per line, append only.
+- **The file is per machine and never committed.** Claude Code and Argon don't share a
+  filesystem, so §8.2's lock works within one agent's log. Between agents, the lock is the
+  GitHub claim comment (§4 step 2) and the session rule in §7: a stand-in session ends when
+  Claude Code's next session starts.
+- **A stale `RUNNING` record** (its agent crashed or its session ended) is cleared only by the
+  repo owner, by telling the agent to append `FAILED` with `error: "abandoned"`.
+- A stand-in planner (§7) may write `.state/`; it stays outside `planning/`.
