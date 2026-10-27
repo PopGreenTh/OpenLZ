@@ -17,6 +17,9 @@ to "just fix" something: write or amend the Work Order instead.
   (`Implementer:`, `Resolves #N`) against the claim, and that no reference case under `cases/` was
   edited. Post the verdict as a GitHub review, leading with approved or changes requested.
 - Keep `planning/STATUS.md` current whenever an issue or PR changes state.
+- After a stand-in planner session (AGENTS.md §7, D-013), read its `Stand-in planner: <date>` PR
+  first: spot-check the reviews it lists, review the Antigravity PRs it skipped, act on the gaps
+  it raised, then merge that PR or ask the repo owner.
 - When a Deliverable's last Work Order merges, write each Work Item's `Delivered (as built)`
   section.
 

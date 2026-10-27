@@ -1,6 +1,6 @@
 # Status
 
-Written by Claude only. Status values: see [README.md](README.md#status-values).
+Written by Claude only, or by a stand-in planner on its own branch (AGENTS.md §7). Status values: see [README.md](README.md#status-values).
 
 ## Before dispatch
 

@@ -23,7 +23,8 @@ CloudValueDelta can adopt it unchanged.
 | **Cursor** | Implementer | Source, tests, CI and docs inside the claimed Work Order's scope |
 
 Implementers never edit `planning/` or this file. If the spec is wrong, contradicts itself or is
-unclear, **stop and say so** in the PR or issue; Claude fixes the spec.
+unclear, **stop and say so** in the PR or issue; Claude fixes the spec. A stand-in planner session
+(§7) is the one exception.
 
 ## 3. The work hierarchy
 
@@ -81,3 +82,61 @@ go build -tags=no_duckdb_arrow -o /tmp/openlz . && /tmp/openlz run --mock
 ```
 
 (Until `WO-0101-A` merges, `scripts/check` doesn't exist and the tree is still v1.)
+
+## 7. Stand-in planner ([D-013](planning/DECISIONS.md#d-013))
+
+When Claude Code is out of usage, the repo owner may name a **stand-in planner**: today Antigravity
+running Gemini 4 Argon. The role is narrower than Claude Code's: it reviews and keeps
+`planning/STATUS.md` current, and it does not plan. Where unsure whether a step is yours, it is
+not: list it in the hand-back.
+
+- **Start and end.** Only the repo owner starts a session, by saying so ("Claude is out, stand in
+  as planner"). It ends when the repo owner says so or Claude Code's next session starts. Never
+  implement in the same session.
+- **Review** a PR against its Work Order's *Done when* only, as §4 step 6 describes: check the
+  first two lines against the claim, that no file under `cases/` changed, and that files stay in
+  the Work Order's packages. Lead the review with `Stand-in planner (<agent>, <model>) —
+  Approved` or `— Changes requested`. Re-review each push on a PR you sent back.
+- **Never review a PR whose Implementer is Antigravity**: that would be a self-review. Leave it
+  for Claude Code or the repo owner.
+- **Bookkeeping.** Update `planning/STATUS.md` (status, PR, branch, Revisions) and nothing else
+  in `planning/`. No Work Order, decision, reference case, `Delivered (as built)` section,
+  dispatch issue, or edit to this file, `CLAUDE.md`, `GEMINI.md` or `docs/taxonomy-spec.md`.
+- **Merge** only on the repo owner's go-ahead, as always.
+- **Branch and hand-back.** Commit to one branch `standin/<YYYY-MM-DD>` and open one PR
+  `Stand-in planner: <YYYY-MM-DD>`, never merged by you. Its description lists every PR reviewed
+  (verdict and link), every PR skipped and why, and every spec gap or question for the repo owner.
+- **Stop and tell the repo owner** when a PR needs a spec change or a decision, or when the only
+  PRs waiting are Antigravity's.
+
+## 8. Multi-Agent Deterministic State Protocol (Claude Code & Antigravity Argon) ([D-014](planning/DECISIONS.md#d-014))
+
+### 8.1 Out-of-Band State Persistence
+- NEVER rely on conversational memory or internal scratchpads for multi-step progress.
+- All state transitions MUST be persisted atomically to `.state/tasks.jsonl`.
+- Before executing any tool or file mutation, read the tail of `.state/tasks.jsonl` to verify
+  current state and lock status.
+
+### 8.2 Concurrency & Agent Locking
+- Before starting a `PENDING` task, append a `RUNNING` record claiming the `task_id` with your
+  runtime identifier (`"agent": "claude-code"` or `"agent": "agy-argon"`).
+- Do not modify files listed in another task's active `RUNNING` record.
+
+### 8.3 Transition Lifecycle
+1. **Claim:** Append `status: "RUNNING"` with target file paths.
+2. **Execute:** Perform minimal-diff edits or non-interactive CLI test runs (`CI=true`).
+3. **Commit State:** Append `status: "COMPLETED"` (with exit code `0` and short git/file hash) or
+   `status: "FAILED"` (with exact error snippet).
+4. **Halt on Failure:** On `FAILED`, stop execution immediately. Do not wipe prior state or
+   hallucinate retries outside the logged state.
+
+### 8.4 How it fits OpenLZ
+- **Record fields:** `ts`, `task_id`, `agent`, `status`, `files`, and on completion `exit` and
+  `hash`, or on failure `error`. One JSON object per line, append only.
+- **The file is per machine and never committed.** Claude Code and Argon don't share a
+  filesystem, so §8.2's lock works within one agent's log. Between agents, the lock is the
+  GitHub claim comment (§4 step 2) and the session rule in §7: a stand-in session ends when
+  Claude Code's next session starts.
+- **A stale `RUNNING` record** (its agent crashed or its session ended) is cleared only by the
+  repo owner, by telling the agent to append `FAILED` with `error: "abandoned"`.
+- A stand-in planner (§7) may write `.state/`; it stays outside `planning/`.
