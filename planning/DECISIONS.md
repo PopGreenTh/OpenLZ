@@ -352,3 +352,18 @@ saves its output and can read a saved run** (repo owner, 2026-10-27; answers Q-0
   cost. So `--from-history` may be given more than once, each adding one saved run to the
   input, and it may be combined with stdin. `enrich map`'s separate `--accounts` flag is
   dropped (WI-0202, WI-0203).
+
+## D-026
+
+**Saved data is read with one flag per thing, `--from-<thing>`; piped data is known by `kind`**
+(repo owner, 2026-10-27).
+
+- `--from-history` is dropped. A command has one flag per kind of data it reads, named by the
+  thing that produced it: `--from-accounts`, `--from-cost`, `--from-map`, `--from-rollup`,
+  `--from-trend`, `--from-changes`, `--from-flags`. Each reads the newest saved run of that
+  command, or `=<timestamp>` for a given one. `enrich map --from-cost --from-accounts` replaces
+  D-025's repeated `--from-history`.
+- A command knows what came through the pipe from each record's `kind`. For each kind it takes
+  the pipe first, then its flag, then its own default. The same kind from the pipe and a flag is
+  an error.
+- Supersedes the `--from-history` parts of D-024 and D-025; D-025's floor of 30 stands.

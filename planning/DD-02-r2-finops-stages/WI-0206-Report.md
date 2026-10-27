@@ -26,7 +26,7 @@ Writing to a file that already exists appends, so repeated runs build one growin
 ### `report accounts`
 
 Prints the OU tree with each account under its OU, as today, but from `ou` and `account`
-records on stdin or `--from-history`. `sense accounts --out` and the inventory file are removed.
+records from the pipe or `--from-accounts`. `sense accounts --out` and the inventory file are removed.
 
 ### Demo and schedule
 
@@ -44,7 +44,8 @@ list of read-only IAM actions, and an example crontab line that runs the monthly
 **Goal.** The three formats with appending, `report accounts` on records, and the quickstart.
 
 **In scope.**
-- `report table|csv|excel|accounts` as specified, with `--from-history`.
+- `report table|csv|excel|accounts` as specified. `table`, `csv` and `excel` have every
+  `--from-<thing>` flag of WI-0202, and may combine several; `accounts` has `--from-accounts`.
 - Golden-file tests on a fixed record file for each format; appending twice gives the header
   once and the rows twice; a new field stops the append; one sheet or file per kind.
 

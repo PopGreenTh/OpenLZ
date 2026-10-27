@@ -19,13 +19,13 @@ Account resolution is DD-01 [WI-0103](../DD-01-r1-account-mapping/WI-0103-Accoun
 
 ### `enrich map`
 
-`openlz-finops enrich map [--taxonomy DIR] [--as-reported] [--from-history …]... [--save=true]`
+`openlz-finops enrich map [--taxonomy DIR] [--as-reported] [--from-accounts[=ts]] [--from-cost[=ts]] [--save=true]`
 
-- **Organization input.** The `ou` and `account` records in the input (stdin or any
-  `--from-history`, D-025). When the input has none, the newest saved `sense/accounts` run is
-  read automatically; the file read is printed to stderr. Neither → error.
-- **Cost input.** The `cost` records in the input. None is fine: the output then has the
-  `allocation` records only.
+- **Organization input** (`ou`, `account`): from the pipe, else `--from-accounts`, else, as
+  this command's default, the newest saved `sense accounts` run (printed to stderr). None at
+  all → error.
+- **Cost input** (`cost`): from the pipe, else `--from-cost`, else none: the output then has
+  the `allocation` records only.
 - **Output**, in this order:
   1. every `ou` and `account` record, unchanged;
   2. one `allocation` record per account and App: `account_id`, `account_name`, `lz`,
@@ -51,8 +51,7 @@ Account resolution is DD-01 [WI-0103](../DD-01-r1-account-mapping/WI-0103-Accoun
 
 ### `enrich validate` and `enrich list`
 
-As built in WO-0201-A; they also accept `--from-history` like any command, and are otherwise
-unchanged.
+As built in WO-0201-A, unchanged; they read no records.
 
 ### Reference cases
 
@@ -77,10 +76,11 @@ Apps with `cost_allocation.app_tag`, and one account left unmapped. It passes
 **Goal.** `sense accounts`, `sense cost` and `enrich map` chain to allocated cost.
 
 **In scope.**
-- `enrich map` as specified, with `--save` and `--from-history`.
+- `enrich map` as specified, with `--save`, `--from-accounts` and `--from-cost`.
 - The old `--inventory` input and `account_map.json` output of `map` are removed.
 - The demo taxonomy above.
-- Tests: every reference case passes unchanged; organization from stdin, from `--from-history sense/accounts`, and found automatically;
+- Tests: every reference case passes unchanged; organization from the pipe, from `--from-accounts`, and by default; `account` records
+  from both the pipe and `--from-accounts` is an error;
   conservation failure on a hand-broken allocation; the taxonomy copy is written once;
   `--as-reported` picks the right snapshots and raises `as-reported-fallback`.
 
@@ -92,7 +92,7 @@ Apps with `cost_allocation.app_tag`, and one account left unmapped. It passes
   prints `allocation` and allocated `cost` records, and the shared account's cost is split by
   the App tag.
 - The `--as-reported` and conservation tests pass.
-- `openlz-finops enrich map --from-history sense/cost --from-history sense/accounts` after a saved
+- `openlz-finops enrich map --from-cost --from-accounts` after a saved
   mock run gives the same records as the pipeline above.
 - README shows the command, the record fields and the three ways to give it the organization.
 

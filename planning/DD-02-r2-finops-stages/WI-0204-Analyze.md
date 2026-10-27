@@ -11,11 +11,12 @@ that moved with it.
 
 All three: amounts are never summed across currencies or metrics; groups always include
 `metric` and `currency`. Records of kinds a command doesn't read pass through unchanged, after
-its own output. `--save` and `--from-history` as in WI-0202.
+its own output. `--save` and the `--from-<thing>` flags as in WI-0202; each command's flags
+are listed with it.
 
 ### `analyze rollup`
 
-`openlz-finops analyze rollup [--by FIELDS]`
+`openlz-finops analyze rollup [--by FIELDS] [--from-cost[=ts] | --from-map[=ts]]`
 
 - Reads `cost` records; `--by` is a comma list of record fields, default
   `business_unit,project,app,environment`.
@@ -28,7 +29,7 @@ its own output. `--save` and `--from-history` as in WI-0202.
 
 ### `analyze trend`
 
-`openlz-finops analyze trend [--by FIELDS]`
+`openlz-finops analyze trend [--by FIELDS] [--from-map[=ts] | --from-rollup[=ts]]`
 
 - Reads `cost` or `rollup` records (rollup records keep their own `by` when `--by` is not
   given). Groups by `--by`, `granularity`, `metric` and `currency`, ordered by `period`.
@@ -42,11 +43,11 @@ its own output. `--save` and `--from-history` as in WI-0202.
 
 ### `analyze changes`
 
-`openlz-finops analyze changes [--against <stage>/<thing>@ts]`
+`openlz-finops analyze changes [--from-map[=ts]] [--against=ts]`
 
-- Reads the current `account` and `allocation` records (and `cost`, if present) from stdin and
-  the same kinds from an earlier saved run: `--against`, default the newest saved
-  `enrich/map` run before the newest one.
+- Reads the current `account` and `allocation` records (and `cost`, if present) from the pipe
+  or `--from-map`, and the same kinds from an earlier saved `enrich map` run: `--against=<ts>`,
+  default the newest saved `enrich map` run older than the current one.
 - Emits one `change` record per difference: `subject_type` (`account` or `allocation`),
   `subject` (account ID, or `<account ID>/<app>`), `change` (`added`, `removed`, `moved`,
   `remapped`), `field` (for `moved`: `ou_path`; for `remapped`: `app`, `environment`,
@@ -63,7 +64,7 @@ its own output. `--save` and `--from-history` as in WI-0202.
 **Goal.** The three commands as specified.
 
 **In scope.**
-- The three commands with `--save` and `--from-history`.
+- The three commands with `--save` and their `--from-<thing>` flags.
 - Table-driven tests with fixed record files in `finops/analyze/testdata/`: rollup by one and by
   several fields; two currencies never summed; trend with a gap, with fewer than 3 periods, and
   with a zero previous period; changes with each `change` kind and with and without cost.

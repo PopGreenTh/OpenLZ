@@ -32,7 +32,7 @@ mapping and App-tag rules of DD-01 still hold (D-005, D-007, D-008, D-010, D-011
     spike), flags with actionable information.
   - Report: table, CSV and Excel, appending to an existing file.
 - Provider cache under `data/cache/`, every stage's output saved under `data/history/` by
-  major parameters, `--from-history` on every stage that reads stdin; an example crontab line.
+  major parameters, `--from-<thing>` flags (`--from-accounts`, `--from-cost`, …) to read saved data; an example crontab line.
 
 **Out (later releases):** SecOps and CloudOps; Azure, GCP and OCI; anything that changes the
 cloud; Markdown, Power BI and REST; any UI; currency conversion; resource-level attribution

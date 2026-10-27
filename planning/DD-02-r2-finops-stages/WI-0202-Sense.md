@@ -113,18 +113,34 @@ data/cache/aws/cost/<management_account>/<granularity>-<metric>-<tag key>/<perio
 data/history/finops/<stage>/<thing>/<params>/<timestamp>.jsonl
 ```
 
-- `<params>` is the command's major parameters (every flag except `--save`, `--from-history`,
+- `<params>` is the command's major parameters (every flag except `--save`, the `--from-<thing>` flags,
   `--refresh`, `--mock` and `--profile`), as `name=value` pairs sorted by name and joined by
   `,`, with defaults written out. If that is longer than 100 characters, or holds a character
   outside `A-Z a-z 0-9 . _ = , -`, it is the first 16 hex characters of its SHA-256 instead.
   Each stage's Work Item lists its major parameters.
-- **`--from-history <stage>/<thing>[@<timestamp>]`**, on every command that reads stdin, adds
-  that saved run's records to the input: the given timestamp, or the newest run of that command
-  over all its `<params>`. It may be **repeated**, so a command that needs several kinds of
-  record can take each from its own run (`enrich map --from-history sense/cost --from-history
-  sense/accounts`). Input order: the saved runs in the order given, then stdin when stdin is a
-  pipe or a file (never a terminal). Each file read is printed to stderr. Reading history is
-  never saved again as a new run of the source command (D-025).
+- **Reading saved data: `--from-<thing>[=<timestamp>]`** (D-026). A command has one such flag
+  per kind of data it reads, named by the **thing** that produced it. A thing name is unique in
+  a domain, so it names exactly one saved command:
+
+  | Flag | Reads the saved run of | Its records |
+  |---|---|---|
+  | `--from-accounts` | `sense accounts` | `ou`, `account` |
+  | `--from-cost` | `sense cost` | `cost` (raw) |
+  | `--from-map` | `enrich map` | `allocation`, `cost` (allocated) |
+  | `--from-rollup` | `analyze rollup` | `rollup` |
+  | `--from-trend` | `analyze trend` | `trend` |
+  | `--from-changes` | `analyze changes` | `change` |
+  | `--from-flags` | `enforce` (saved as `enforce/flags`) | `flag` |
+
+  With no value it reads the newest run of that command over all its `<params>`; with
+  `=<timestamp>` that run. Each file read is printed to stderr. Reading saved data is never
+  saved again as a new run of the source command.
+- **What came through the pipe** is known from each record's `kind`; a command never has to be
+  told. For each kind it reads, a command takes it from the pipe if the pipe has that kind, else
+  from its `--from-<thing>` flag, else from its own default (most have none; WI-0203 gives
+  `enrich map` one). The same kind from both the pipe and a flag is an error naming both, so
+  data is never mixed by accident. Each stage's Work Item lists which `--from-<thing>` flags its
+  commands have.
 
 **Both stores.**
 - `--save=false` writes nothing and reads no cache (for tests and dry runs).
@@ -145,19 +161,21 @@ wrongly tagged rows), and one account that is not in the demo organization. Mont
 **Packages:** `record/`, `finops/sense/`, `aws/` (only what `sense accounts` needs), `README.md`
 
 **Goal.** `sense accounts` writes the `ou`, `account` and `finding` records to stdout and saves
-its run; `record/` gives every later stage saving and `--from-history`.
+its run; `record/` gives every later stage saving and the `--from-<thing>` flags.
 
 **In scope.**
 - `record/`: reader, writer, flatness check, both stores' paths, `<params>` naming, the
-  write-once rule, and the `--save` and `--from-history` flags for any command to attach.
+  write-once rule, the thing-to-command table, and the `--save` and `--from-<thing>` flags for
+  any command to attach.
 - `sense accounts` as specified. Its old `--out` inventory file stays, unchanged, until
   `enrich map` (WO-0203-A) and `report accounts` (WO-0206-A) read records; WO-0206-A removes it.
 - Golden-file test: `sense accounts --mock --save=false` matches
   `finops/sense/testdata/accounts.jsonl`.
 - Unit tests: a nested value is rejected; unknown `kind`s pass through unchanged and in order; a
   malformed line is reported by number; the store never overwrites a file; `<params>` naming
-  (sorted, defaults written, hashed when long); `--from-history` picks the newest run or the
-  given timestamp, and repeated flags plus stdin give the records in the stated order.
+  (sorted, defaults written, hashed when long); `--from-<thing>` picks the newest run or the given
+  timestamp; a kind from the pipe is used when present; the same kind from the pipe and a flag
+  is an error.
 
 **Out of scope.** `sense cost` (WO-0202-B). Reading these records in other stages (WI-0203+).
 

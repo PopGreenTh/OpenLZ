@@ -8,7 +8,7 @@ several (D-022). Enforce never calls the cloud.
 
 ## Contracts
 
-`openlz-finops enforce RULE [RULE...] [--floor 30] [--by FIELDS]`
+`openlz-finops enforce RULE [RULE...] [--floor 30] [--by FIELDS] [--from-map[=ts]] [--from-rollup[=ts]]`
 
 - Every input record passes through unchanged, in order; the `flag` records follow.
 - One `flag` record per subject, rule and period:
@@ -36,7 +36,8 @@ several (D-022). Enforce never calls the cloud.
 
 - An unknown rule name is an error that lists the rules. Rules run in the order named; a flag
   is never raised twice for the same rule, subject and period.
-- Major parameters: the rules (sorted), `floor`, `by`.
+- Major parameters: the rules (sorted), `floor`, `by`. Its history is saved as `enforce/flags`
+  (thing `flags`, WI-0202).
 
 ## WO-0205-A — The four rules
 
@@ -47,7 +48,7 @@ several (D-022). Enforce never calls the cloud.
 **Goal.** `enforce` with the four rules as specified.
 
 **In scope.**
-- The command, the four rules, `--save` and `--from-history`.
+- The command, the four rules, `--save`, `--from-map` and `--from-rollup`.
 - Table-driven tests per rule in `finops/enforce/testdata/`, including spike at each level
   boundary, below the floor, and with fewer than 3 earlier periods (no flag).
 
