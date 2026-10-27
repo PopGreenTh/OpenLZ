@@ -158,8 +158,8 @@ periods it has not stored.
 - README: the command, the IAM action `ce:GetCostAndUsage`, activating the App tag as a cost
   allocation tag, and turning on multi-year data in AWS Billing for 24 months.
 
-**Out of scope.** Splitting cost by App (WI-0203). Any metric choice beyond D-022 unless Q-004
-item 4 adds it.
+**Out of scope.** Splitting cost by App (WI-0203). Any metric choice beyond D-022 unless Q-005
+item 2 adds it.
 
 **Done when.**
 - `openlz-finops sense cost --mock` prints 25 months of `cost` records for the demo accounts
