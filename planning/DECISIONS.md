@@ -255,8 +255,7 @@ including each agent's duties, lives in `AGENTS.md`.
 
 ## Q-003
 
-**Open: what DD-02's stages need before their Work Items are specified** (planner, 2026-10-27).
-Blocks WI-0202 to WI-0206, not WO-0201-A.
+**Closed** by [D-022](#d-022). What DD-02's stages need before their Work Items are specified.
 
 1. Provider folders: create only `aws/` now, or empty `azure/`, `gcp/` and `oci/` too?
 2. Sense cost grain: monthly only, as in DD-01, or daily too?
@@ -265,3 +264,37 @@ Blocks WI-0202 to WI-0206, not WO-0201-A.
 4. Enforce in DD-02: which rules? For example unmapped account, untagged shared-account cost,
    wrong App tag, cost spike.
 5. Report formats in DD-02: table, CSV and Markdown; is Excel needed now?
+
+## D-022
+
+**DD-02's stages: AWS only, monthly unblended and daily amortized cost, two Analyze commands, every
+Enforce rule its own command, Report to table, CSV and Excel** (repo owner, 2026-10-27; answers
+Q-003).
+
+- **Providers.** DD-02 builds `aws/` only. `azure/`, `gcp/` and `oci/` are created by the first
+  Work Order that needs them.
+- **Cost grain and metric.** Monthly cost uses `UnblendedCost`; daily cost uses `AmortizedCost`.
+  AWS keeps daily data for about 14 months only, so the 24-month depth of D-016 is monthly.
+- **Analyze** has two separate commands: `analyze changes` (what changed between two snapshots
+  and the cost that moved with it) and `analyze trend` (cost over time and the impact of each
+  change on it). *Planner's reading* of "changes and trend impact as separate things".
+- **Enforce.** Every rule is its own command: unmapped account, untagged shared-account cost,
+  wrong App tag, cost spike. One run can name several rules.
+- **Report** writes a table, CSV or Excel. Markdown is dropped. A report written to a file that
+  already exists appends to it instead of replacing it. *Planner's reading* of "table as append";
+  Q-004 item 1 confirms it.
+
+## Q-004
+
+**Open: details for Enrich, Analyze, Enforce and Report** (planner, 2026-10-27). Blocks WI-0204,
+WI-0205 and WI-0206; item 5 also blocks WI-0203. WI-0202 is not blocked.
+
+1. Report append: does each run add its rows to the end of the same CSV file and the same Excel
+   sheet, building one growing table? Or should Excel get a new sheet per run?
+2. Rollup (cost summed by Project, App and Environment for one period): part of `analyze trend`,
+   or its own command `analyze rollup`?
+3. Cost spike: what counts as a spike? Proposal: a month more than 30% and more than 100 USD
+   above the average of the three months before it.
+4. Metric: always the D-022 metric for the grain, or may `--metric` override it?
+5. As-reported history needs the taxonomy as it was. Should Enrich save each taxonomy it uses
+   under `data/history/` (recommended), or should OpenLZ read old versions from git?

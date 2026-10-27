@@ -82,8 +82,8 @@ something; it writes or amends the Work Order instead. It also:
   `<stage> <thing>` (`openlz-finops sense cost`). Single tenant: no tenant field, flag or file
   suffix anywhere.
 - **Layout** (D-017). `<domain>/<stage>/` for stage code, its command and its `testdata/`;
-  provider clients and mocks in `aws/`, `azure/`, `gcp/`, `oci/`. No `cmd/`, no `internal/`, no
-  top-level `testdata/`. Reference cases live in the `testdata/` of the package that reads them.
+  provider clients and mocks in `aws/`, `azure/`, `gcp/`, `oci/`; the shared record reader,
+  writer and history store in `record/`. No `cmd/`, no `internal/`, no top-level `testdata/`. Reference cases live in the `testdata/` of the package that reads them.
 - **Records** (D-015). Stages read and write flat JSON Lines on stdin/stdout: one object per
   line, no nested objects or arrays, a `kind` field on every record. Only Report writes other
   formats.

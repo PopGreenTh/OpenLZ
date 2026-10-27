@@ -6,7 +6,8 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 | Question | Blocks | State |
 |---|---|---|
-| [Q-003](DECISIONS.md#q-003): provider folders, cost grain, Analyze, Enforce and Report scope | WI-0202 to WI-0206 | open |
+| [Q-003](DECISIONS.md#q-003): provider folders, cost grain, Analyze, Enforce and Report scope | — | closed by D-022 |
+| [Q-004](DECISIONS.md#q-004): report append, rollup, spike rule, metric override, taxonomy history | WO-0202-B (item 4), WI-0203 (item 5), WI-0204 to WI-0206 | open |
 
 ## DD-02 — Release 2: FinOps as small pipeable stages
 
@@ -16,7 +17,14 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 |---|---|---|---|---|---|---|---|
 | [WO-0201-A](DD-02-r2-finops-stages/WI-0201-Restructure.md#wo-0201-a--move-to-finops-and-aws-binary-openlz-finops) | open | — (met) | not started (awaiting go-ahead) | — | — | — | 0 |
 
-WI-0202 to WI-0206 are not yet written (Q-003).
+### WI-0202 — `finops/sense`
+
+| Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
+|---|---|---|---|---|---|---|---|
+| [WO-0202-A](DD-02-r2-finops-stages/WI-0202-Sense.md#wo-0202-a--records-sense-accounts-as-json-lines-history-store) | open | WO-0201-A | not started | — | — | — | 0 |
+| [WO-0202-B](DD-02-r2-finops-stages/WI-0202-Sense.md#wo-0202-b--sense-cost-keyed-cache-and-mock-cost) | open | WO-0202-A; Q-004 item 4 | not started | — | — | — | 0 |
+
+WI-0203 to WI-0206 are not yet written (Q-004).
 
 ## DD-01 — Release 1: account mapping (closed early, D-018)
 
