@@ -68,6 +68,7 @@ WO-0204-A and WO-0205-A run in parallel; they touch different packages.
    exits 0.
 3. Every reference case passes, unchanged.
 4. A second run over closed months makes zero Cost Explorer calls.
-5. `analyze` gives both restated and as-reported results over at least two saved snapshots.
+5. Over two saved organization and taxonomy snapshots, `enrich map` gives restated results and
+   `enrich map --as-reported` gives as-reported ones, and `analyze trend` runs on both.
 6. Against a real AWS Organization (repo owner's run), the pipeline completes with read-only
    permissions listed in the README.
