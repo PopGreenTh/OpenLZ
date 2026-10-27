@@ -317,8 +317,7 @@ items 1, 2, 5 and part of 3).
 
 ## Q-005
 
-**Open: spike levels, cost metric, and reading earlier runs** (planner, 2026-10-27). Item 1
-blocks WI-0205, item 2 blocks WO-0202-B, item 3 blocks WI-0203 to WI-0206.
+**Closed** by [D-024](#d-024). Spike levels, cost metric, and reading earlier runs.
 
 1. Spike: baseline = the average of the 3 months before; factor = amount ÷ baseline; levels by
    powers of 2: level 1 ≥ 1.25×, level 2 ≥ 1.5×, level 3 ≥ 2×, level 4 ≥ 4×; a month less
@@ -326,3 +325,20 @@ blocks WI-0205, item 2 blocks WO-0202-B, item 3 blocks WI-0203 to WI-0206.
 2. Metric: fixed by grain (D-022), or `--metric` allowed to override it?
 3. Reading earlier runs: may every stage save its output (not only Sense), and may every stage
    read a saved run instead of stdin with `--from-history`?
+
+## D-024
+
+**Spike levels double from the floor; the metric has a default users can change; every stage
+saves its output and can read a saved run** (repo owner, 2026-10-27; answers Q-005).
+
+- **Spike.** Baseline = the average of the 3 periods before; factor = amount ÷ baseline. A
+  period is a spike only when it is at least the **floor** (default 100 USD) above its baseline.
+  From there, four levels by powers of 2: level 1 at a factor ≥ 2, level 2 ≥ 4, level 3 ≥ 8,
+  level 4 ≥ 16. *Planner's reading* of "power of 2, 4 from floor"; the floor is a flag.
+- **Metric.** The D-022 metric per grain is the default; `--metric` changes it to any Cost
+  Explorer cost metric. The metric is part of the cache key.
+- **History for every stage.** Every stage command saves what it writes under
+  `data/history/finops/<stage>/<thing>/<params>/`, and every command that reads stdin can read
+  a saved run instead with `--from-history <stage>/<thing>[@<timestamp>]`.
+- Supersedes D-016's planner's reading that cache and history are one store: the provider cache
+  is `data/cache/`, stage history is `data/history/` (WI-0202).

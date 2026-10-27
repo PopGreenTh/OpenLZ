@@ -15,7 +15,8 @@ openlz-finops sense accounts --mock | openlz-finops enrich map \
 
 D-013 (pivot, binary per domain), D-014 (five stages and their order), D-015 (flat JSON Lines,
 keyed cache), D-016 (history), D-017 (layout), D-018 (DD-01 stops), D-019 (planning), D-022
-(providers, cost grain, Analyze, Enforce, Report). The
+(providers, cost grain, Analyze, Enforce, Report), D-023 (append, rollup, taxonomy history),
+D-024 (spike levels, metric, history for every stage). The
 mapping and App-tag rules of DD-01 still hold (D-005, D-007, D-008, D-010, D-011).
 
 ## Scope
@@ -30,7 +31,8 @@ mapping and App-tag rules of DD-01 still hold (D-005, D-007, D-008, D-010, D-011
   - Enforce: one command per rule (unmapped account, untagged shared cost, wrong App tag, cost
     spike), flags with actionable information.
   - Report: table, CSV and Excel, appending to an existing file.
-- History saved under `data/history/` by major parameters; an example crontab line.
+- Provider cache under `data/cache/`, every stage's output saved under `data/history/` by
+  major parameters, `--from-history` on every stage that reads stdin; an example crontab line.
 
 **Out (later releases):** SecOps and CloudOps; Azure, GCP and OCI; anything that changes the
 cloud; Markdown, Power BI and REST; any UI; currency conversion; resource-level attribution
@@ -42,20 +44,22 @@ cloud; Markdown, Power BI and REST; any UI; currency conversion; resource-level 
 |---|---|---|---|
 | [WI-0201](WI-0201-Restructure.md) | Move today's code to the D-017 layout; `openlz-finops` | A | specified |
 | [WI-0202](WI-0202-Sense.md) | `finops/sense`: accounts and cost; the shared record rules and history store | A, B | specified |
-| WI-0203 | `finops/enrich`: map records to the taxonomy, App-tag split | — | blocked by Q-005 item 3 |
-| WI-0204 | `finops/analyze`: `rollup`, `changes` and `trend` | — | blocked by Q-005 |
-| WI-0205 | `finops/enforce`: one command per rule | — | blocked by Q-005 |
-| WI-0206 | `finops/report`: table, CSV, Excel, append | — | blocked by Q-005 |
+| [WI-0203](WI-0203-Enrich.md) | `finops/enrich`: map records to the taxonomy, App-tag split | A | specified |
+| [WI-0204](WI-0204-Analyze.md) | `finops/analyze`: `rollup`, `changes` and `trend` | A | specified |
+| [WI-0205](WI-0205-Enforce.md) | `finops/enforce`: one command per rule | A | specified |
+| [WI-0206](WI-0206-Report.md) | `finops/report`: table, CSV, Excel, append | A | specified |
 
-WI-0203 to WI-0206 are written once Q-005 is answered. WI-0202 defines the record rules and the
-history store (D-015, D-016) that every later stage follows.
+WI-0202 defines the record rules and the two stores (D-015, D-016, D-024) that every later
+stage follows.
 
 ## Order
 
 ```
-WO-0201-A ─► WO-0202-A ─► WO-0202-B ─► WI-0203 ─┬─► WI-0204 ─┐
-                                 └─► WI-0205 ─┴─► WI-0206
+WO-0201-A ─► WO-0202-A ─► WO-0202-B ─► WO-0203-A ─┬─► WO-0204-A ─┬─► WO-0206-A
+                                                  └─► WO-0205-A ─┘
 ```
+
+WO-0204-A and WO-0205-A run in parallel; they touch different packages.
 
 ## Release criteria
 

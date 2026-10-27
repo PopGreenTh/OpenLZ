@@ -8,7 +8,7 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 |---|---|---|
 | [Q-003](DECISIONS.md#q-003): provider folders, cost grain, Analyze, Enforce and Report scope | — | closed by D-022 |
 | [Q-004](DECISIONS.md#q-004): report append, rollup, spike rule, metric override, taxonomy history | — | closed by D-023 and Q-005 |
-| [Q-005](DECISIONS.md#q-005): spike levels, metric override, reading earlier runs | WO-0202-B (item 2), WI-0203 to WI-0206 | open |
+| [Q-005](DECISIONS.md#q-005): spike levels, metric override, reading earlier runs | — | closed by D-024 |
 
 ## DD-02 — Release 2: FinOps as small pipeable stages
 
@@ -23,9 +23,32 @@ Written by Claude only. Status values: see [README.md](README.md#status-values).
 | Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
 |---|---|---|---|---|---|---|---|
 | [WO-0202-A](DD-02-r2-finops-stages/WI-0202-Sense.md#wo-0202-a--records-sense-accounts-as-json-lines-history-store) | open | WO-0201-A | not started | — | — | — | 0 |
-| [WO-0202-B](DD-02-r2-finops-stages/WI-0202-Sense.md#wo-0202-b--sense-cost-keyed-cache-and-mock-cost) | open | WO-0202-A; Q-005 item 2 | not started | — | — | — | 0 |
+| [WO-0202-B](DD-02-r2-finops-stages/WI-0202-Sense.md#wo-0202-b--sense-cost-keyed-cache-and-mock-cost) | open | WO-0202-A | not started | — | — | — | 0 |
 
-WI-0203 to WI-0206 are not yet written (Q-005).
+### WI-0203 — `finops/enrich`
+
+| Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
+|---|---|---|---|---|---|---|---|
+| [WO-0203-A](DD-02-r2-finops-stages/WI-0203-Enrich.md#wo-0203-a--enrich-map-on-records---as-reported-demo-taxonomy) | open | WO-0202-B | not started | — | — | — | 0 |
+
+### WI-0204 — `finops/analyze`
+
+| Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
+|---|---|---|---|---|---|---|---|
+| [WO-0204-A](DD-02-r2-finops-stages/WI-0204-Analyze.md#wo-0204-a--analyze-rollup-trend-and-changes) | open | WO-0203-A | not started | — | — | — | 0 |
+
+### WI-0205 — `finops/enforce`
+
+| Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
+|---|---|---|---|---|---|---|---|
+| [WO-0205-A](DD-02-r2-finops-stages/WI-0205-Enforce.md#wo-0205-a--the-four-rules) | open | WO-0203-A | not started | — | — | — | 0 |
+
+### WI-0206 — `finops/report`
+
+| Work Order | Assignee | Depends on | Status | Issue | PR | Branch | Revisions |
+|---|---|---|---|---|---|---|---|
+| [WO-0206-A](DD-02-r2-finops-stages/WI-0206-Report.md#wo-0206-a--report-formats-appending-quickstart) | open | WO-0204-A, WO-0205-A | not started | — | — | — | 0 |
+
 
 ## DD-01 — Release 1: account mapping (closed early, D-018)
 
