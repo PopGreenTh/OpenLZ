@@ -1,5 +1,8 @@
 # Status
 
+> **OpenLZ is closing** (D-027, D-028). Work moves to the new repository OpenXOps, planned from
+> scratch. No DD-02 Work Order is dispatched here.
+
 Written by Claude only. Status values: see [README.md](README.md#status-values).
 
 ## Open questions

@@ -382,8 +382,8 @@ saves its output and can read a saved run** (repo owner, 2026-10-27; answers Q-0
 
 ## Q-006
 
-**Open: OpenXOps binaries, cloud providers and seed** (planner, 2026-10-27). Blocks every DD-02
-dispatch.
+**Closed** by [D-028](#d-028) (items 1, 3, 4); item 2 is carried into OpenXOps's own planning.
+OpenXOps binaries, cloud providers and seed (planner, 2026-10-27).
 
 1. Binaries: `xops` for commands shared by every domain (Report, history, version) plus one
    binary per domain, `finops`, `secops`, `cloudops`? Or one binary, `xops finops sense cost`?
@@ -392,3 +392,15 @@ dispatch.
 3. Seed: carry the code, `planning/` (decisions keep their numbers) and reference cases over
    from OpenLZ; review and merge PR #21 first so its allocation engine comes along?
 4. Who creates the OpenXOps repository: the repo owner, or Claude on the owner's go-ahead?
+
+## D-028
+
+**OpenXOps is one binary, `xops`, planned from scratch; the repo owner creates it** (repo owner,
+2026-10-27; answers Q-006 items 1, 3, 4).
+
+- One binary, `xops`. Commands shared by every domain sit at the top
+  (`xops sense accounts`); domain commands sit under their domain (`xops finops sense cost`).
+- Nothing is carried over: no code, no `planning/`, no reference cases. OpenXOps is planned
+  anew, and OpenLZ is read for intent only, as `v1-reference` was.
+- The repo owner creates the OpenXOps repository; Claude writes its first plan there.
+- DD-02 in this repository is not built; no DD-02 Work Order is dispatched here.
